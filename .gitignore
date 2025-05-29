@@ -17,7 +17,7 @@ reated by https://www.toptal.com/developers/gitignore/api/clion+all,visualstudio
 
 # Generated files
 .idea/**/contentModel.xml
-
+.idea/*
 # Sensitive or high-churn files
 .idea/**/dataSources/
 .idea/**/dataSources.ids
@@ -26,6 +26,7 @@ reated by https://www.toptal.com/developers/gitignore/api/clion+all,visualstudio
 .idea/**/dynamic.xml
 .idea/**/uiDesigner.xml
 .idea/**/dbnavigator.xml
+.idea/codeStyles/**
 
 # Gradle
 .idea/**/gradle.xml
