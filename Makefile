@@ -2,7 +2,7 @@
 # 
 generate-ext2:
 	dd if=/dev/zero of=./myext2.iso bs=1024 count=64K
-	mkfs.ext2 -b 1024 ./myext2.iso
+	mkfs.ext2 -L "Volume do mouras" -b 1024 ./myext2.iso
 
 verify-ext2:
 	e2fsck myext2.iso
@@ -19,8 +19,8 @@ copy-files:
 run-image: generate-ext2 verify-ext2 mount copy-files
 
 run:
-	gcc main.c -o main -lext2fs
+	gcc ext2-impl/ext2-fs-methods.c commands.c main.c -o main
 	./main
 
 clean:
-	rm -f main *.img *.iso
+	rm -f main

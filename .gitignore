@@ -1,4 +1,4 @@
-reated by https://www.toptal.com/developers/gitignore/api/clion+all,visualstudiocode,cmake
+Created by https://www.toptal.com/developers/gitignore/api/clion+all,visualstudiocode,cmake
 # Edit at https://www.toptal.com/developers/gitignore?templates=clion+all,visualstudiocode,cmake
 
 ### CLion+all ###
@@ -11,6 +11,8 @@ reated by https://www.toptal.com/developers/gitignore/api/clion+all,visualstudio
 .idea/**/usage.statistics.xml
 .idea/**/dictionaries
 .idea/**/shelf
+
+*.iso
 
 # AWS User-specific
 .idea/**/aws.xml
