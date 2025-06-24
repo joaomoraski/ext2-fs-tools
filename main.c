@@ -98,6 +98,10 @@ int main() {
             } else {
                 printf("print option not found\n");
             }
+        } else if (strcmp(args[0], "pwd") == 0) {
+            printf("%s\n", fs_info.current_path);
+        } else if (strcmp(args[0], "cd") == 0) {
+            cd(&fs_info, args[1]);
         } else {
             printf("command not found\n");
         }

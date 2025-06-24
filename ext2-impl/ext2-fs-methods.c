@@ -3,6 +3,7 @@
 //
 #include "ext2-fs-methods.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 void load_super_block(ext2_info* fs_info) {
@@ -43,7 +44,7 @@ void load_group_desc(ext2_info* fs_info) {
     strcpy(fs_info->current_path, "/");
 }
 
-inode_struct read_inode_by_number(ext2_info* fs_info, int inode_number) {
+inode_struct read_inode_by_number(ext2_info* fs_info, unsigned int inode_number) {
     int group = (inode_number - 1) / fs_info->sb.s_inodes_per_group;
     group_desc group_desc = fs_info->group_desc_array[group];
     int inode_index_on_group = (inode_number - 1) % fs_info->sb.s_inodes_per_group;
@@ -56,8 +57,65 @@ inode_struct read_inode_by_number(ext2_info* fs_info, int inode_number) {
     return inode;
 }
 
-void read_data_block(ext2_info* fs_info, int block_number, char* buffer) {
+unsigned int find_inode_number_by_path(ext2_info* fs_info, char *path) {
+    unsigned int start_inode;
+
+    if (path[0] == '/') { // Caminho absoluto
+        start_inode = 2;
+    } else {
+        start_inode = fs_info->current_dir_inode;
+    }
+    char* splited_path = strtok(path, "/");
+
+    while (splited_path != NULL) {
+        inode_struct inode = read_inode_by_number(fs_info, start_inode);
+
+        if (!S_ISDIR(inode.i_mode)) { // não é um diretorio.
+            printf("Erro: '%s' não é um diretório no caminho.\n", "componente_anterior"); // Melhorar isso depois
+            return 0;
+        }
+
+        // Ler o data block do diretorio atual
+        char tmp[1024];
+        read_data_block(fs_info, inode.i_block[0], tmp, sizeof(tmp));
+
+        char* actual_pointer = tmp;
+        int bytes_read = 0;
+        unsigned int next_inode = 0;
+
+        while (bytes_read < fs_info->block_size) {
+            dir_entry* entry = (dir_entry*)actual_pointer;
+
+            // Se o tamanho do diretorio é 0 tem algo errado
+            if (entry->rec_len == 0) { break; }
+
+            // 0 significa excluido ou vazio
+            if (entry->inode != 0) {
+                // comparar o nome da entrada com o caminho atual e o tamanho
+                if (strncmp(splited_path, entry->name, entry->name_len) == 0 && strlen(splited_path) == entry->name_len) {
+                    next_inode = entry->inode;
+                    break;
+                }
+            }
+            actual_pointer += entry->rec_len;
+            bytes_read += entry->rec_len;
+        }
+
+        if (next_inode == 0) {
+            printf("Erro: '%s' não encontrado.\n", splited_path);
+            return 0;
+        }
+
+        start_inode = next_inode;
+
+        splited_path = strtok(NULL, "/");
+    }
+    return start_inode;
+}
+
+
+void read_data_block(ext2_info* fs_info, int block_number, char* buffer, int buffer_size) {
     int content_location = block_number * fs_info->block_size;
     lseek(fs_info->fd, content_location, SEEK_SET);
-    read(fs_info->fd, buffer, sizeof(buffer));
+    read(fs_info->fd, buffer, buffer_size);
 }

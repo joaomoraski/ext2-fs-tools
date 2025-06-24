@@ -41,10 +41,8 @@ void info(ext2_info fs_info) {
 void ls(ext2_info fs_info) {
     inode_struct inode = read_inode_by_number(&fs_info, fs_info.current_dir_inode);
 
-    int content_location = inode.i_block[0] * fs_info.block_size;
     char tmp[1024];
-    lseek(fs_info.fd, content_location, SEEK_SET);
-    read(fs_info.fd, tmp, sizeof(tmp));
+    read_data_block(&fs_info, inode.i_block[0], tmp, sizeof(tmp));
 
     char* actual_pointer = tmp;
     int bytes_read = 0;
@@ -196,7 +194,7 @@ void print_groups(ext2_info fs_info) {
     }
 }
 
-void print_inode(ext2_info fs_info, int inode_number) {
+void print_inode(ext2_info fs_info, unsigned int inode_number) {
     inode_struct inode = read_inode_by_number(&fs_info, inode_number);
     printf("file format and access rights: 0x%x\n"
            "user id: %d\n"
@@ -218,4 +216,46 @@ void print_inode(ext2_info fs_info, int inode_number) {
            "block number extended attributes: %d\n"
            "higher 32-bit file size: %d\n"
            "location file fragment: %d\n", inode.i_generation, inode.i_file_acl, inode.i_dir_acl, inode.i_faddr);
+}
+
+void cd(ext2_info* fs_info, char* path) {
+    char path_copy[1024];
+    strcpy(path_copy, path);
+    unsigned int inode_number = find_inode_number_by_path(fs_info, path);
+
+
+    if (inode_number == 0) { // Não achou o diretorio, voltou com o erro
+        // Erro ja foi printado
+        return;
+    }
+
+    inode_struct inode = read_inode_by_number(fs_info, inode_number);
+
+    if (!S_ISDIR(inode.i_mode)) {
+        printf("'%s': Não é um diretório\n", path);
+        return;
+    }
+
+    // atualiza o numero do inode atual na estrutura principal
+    fs_info->current_dir_inode = inode_number;
+
+
+    // atualizar a string do caminho
+
+    if (strcmp(path, "..") == 0) {
+        // se o comando foi 'cd ..'.
+        change_path_level(fs_info->current_path);
+    } else if (strcmp(path, "/") == 0) {
+        // Se o comando for 'cd /', reseta o caminho para a raiz.
+        strcpy(fs_info->current_path, "/");
+    } else if (path[0] == '/') {
+        // se for um caminho absoluto, o novo caminho é o próprio path.
+        strcpy(fs_info->current_path, path);
+    } else {
+        // se for um caminho relativo, anexe ao caminho atual.
+        if (strcmp(fs_info->current_path, "/") != 0) {
+            strcat(fs_info->current_path, "/");
+        }
+        strcat(fs_info->current_path, path);
+    }
 }

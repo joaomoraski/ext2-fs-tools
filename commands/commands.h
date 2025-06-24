@@ -5,6 +5,7 @@
 
 void info(ext2_info fs_info);
 void ls(ext2_info fs_info);
+void cd(ext2_info* fs_info, char* path);
 void print_superblock(ext2_info fs_info);
 void print_groups(ext2_info fs_info);
 void print_inode(ext2_info fs_info, int inode_number);
