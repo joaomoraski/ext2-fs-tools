@@ -7,8 +7,9 @@
 #define EXT2_STRUCTS_H
 #include <stdint.h>
 
+// packed é pra falar pro compilador para de ser fresco e ler exatamente como esta
+// inves de ler em multiplo de 4 adicionando padding ele le exatamente como ta la
 typedef struct __attribute__((packed)) {
-    // unsigned char padding_01[4];
     unsigned int s_inodes_count;
     unsigned int s_blocks_count;
     unsigned int s_r_blocks_count;
@@ -16,32 +17,46 @@ typedef struct __attribute__((packed)) {
     unsigned int s_free_inodes_count;
     unsigned int s_first_data_block;
     unsigned int s_log_block_size;
-    unsigned int padding_01; //s_log_cluster_size frag_size
+    unsigned int s_log_frag_size; //s_log_cluster_size frag_size
     unsigned int s_blocks_per_group;
-    unsigned int padding_02; //s_clusters_per_group frag
+    unsigned int s_frag_per_group; //s_clusters_per_group frag
     unsigned int s_inodes_per_group;
-    unsigned char padding_03[12]; // s_mtime
-    // unsigned int padding_04; // s_wtime
-    // unsigned short padding_05; // s_mnt_count
-    // signed short padding_06; // s_max_mnt_count
+    unsigned int s_mtime;
+    unsigned int s_wtime;
+    unsigned short s_mnt_count;
+    unsigned short s_max_mnt_count;
     unsigned short s_magic;
-    unsigned char padding_07[30]; // s_state
-    // unsigned short padding_08; // s_errors
-    // unsigned short padding_09; // s_minor_rev_level
-    // unsigned int padding_10; // s_lastcheck
-    // unsigned int padding_11; // s_checkinterval
-    // unsigned int padding_12; // s_creator_os
-    // unsigned int padding_13; // s_rev_level
-    // unsigned short padding_14; // s_def_resuid
-    // unsigned short padding_15; // s_def_resgid
-    // unsigned int padding_16; // s_first_ino
+    unsigned short s_state;
+    unsigned short s_errors;
+    unsigned short s_minor_rev_level;
+    unsigned int s_lastcheck;
+    unsigned int s_checkinterval;
+    unsigned int s_creator_os;
+    unsigned int s_rev_level;
+    unsigned short s_def_resuid;
+    unsigned short s_def_resgid;
+    unsigned int s_first_ino;
     unsigned short s_inode_size;
-    unsigned char padding_17[30]; // s_block_group_nr
-    // unsigned int padding_18; // s_feature_compat
-    // unsigned int padding_19; // s_feature_incompat
-    // unsigned int padding_20; // s_feature_ro_compat
-    // unsigned char padding_21; // s_uuid
+    unsigned short s_block_group_nr;
+    unsigned int s_feature_compat;
+    unsigned int s_feature_incompat;
+    unsigned int s_feature_ro_compat;
+    unsigned char s_uuid[16];
     unsigned char s_volume_name[16];
+    unsigned char s_last_mounted[64];
+    unsigned int s_algorithm_usage_bitmap;
+    unsigned char s_prealloc_blocks;
+    unsigned char s_prealloc_dir_blocks;
+    unsigned short s_reserved_gdt_blocks;
+    unsigned char s_journal_uuid[16];
+    unsigned int s_journal_inum;
+    unsigned int s_journal_dev;
+    unsigned int s_last_orphan;
+    unsigned char s_hash_seed[16];
+    unsigned char s_def_hash_version;
+    unsigned char s_reserved_char_pad[3];
+    unsigned int s_default_mount_opts;
+    unsigned int s_first_meta_bg;
 } super_block;
 
 typedef struct __attribute__((packed)) {
@@ -60,7 +75,7 @@ typedef struct __attribute__((packed)) {
 } group_desc;
 
 
-typedef struct {
+typedef struct __attribute__((packed)) {
     uint16_t i_mode;
     uint16_t i_uid;
     uint32_t i_size;
@@ -74,12 +89,20 @@ typedef struct {
     uint32_t i_flags;
     uint32_t i_osd1;
     uint32_t i_block[15];
-    uint32_t i_generation;
-    uint32_t i_file_acl;
+    uint32_t i_generation; // file version for nfs
+    uint32_t i_file_acl; //
     uint32_t i_dir_acl;
     uint32_t i_faddr;
     uint8_t i_osd2[12];
-} inode;
+} inode_struct;
+
+typedef struct __attribute__((packed)) {
+    uint32_t inode;
+    uint16_t rec_len;
+    uint8_t name_len;
+    uint8_t file_type;
+    char name[255];
+} dir_entry;
 
 typedef struct {
     super_block sb;
@@ -88,6 +111,7 @@ typedef struct {
     unsigned int num_block_groups; // Número total de grupos de blocos (calculado do sb)
     unsigned int current_dir_inode; // Inode do diretório corrente (para cd, ls, pwd)
     char current_path[256];
+    int fd;
 } ext2_info;
 
 #endif //EXT2_STRUCTS_H
