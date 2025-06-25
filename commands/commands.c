@@ -221,7 +221,7 @@ void print_inode(ext2_info fs_info, unsigned int inode_number) {
 void cd(ext2_info* fs_info, char* path) {
     char path_copy[1024];
     strcpy(path_copy, path);
-    unsigned int inode_number = find_inode_number_by_path(fs_info, path);
+    unsigned int inode_number = find_inode_number_by_path(fs_info, path_copy);
 
 
     if (inode_number == 0) { // Não achou o diretorio, voltou com o erro
@@ -241,21 +241,30 @@ void cd(ext2_info* fs_info, char* path) {
 
 
     // atualizar a string do caminho
+    char new_path[1024];
+    resolve_path_string(new_path, fs_info->current_path, path);
 
-    if (strcmp(path, "..") == 0) {
-        // se o comando foi 'cd ..'.
-        change_path_level(fs_info->current_path);
-    } else if (strcmp(path, "/") == 0) {
-        // Se o comando for 'cd /', reseta o caminho para a raiz.
-        strcpy(fs_info->current_path, "/");
-    } else if (path[0] == '/') {
-        // se for um caminho absoluto, o novo caminho é o próprio path.
-        strcpy(fs_info->current_path, path);
-    } else {
-        // se for um caminho relativo, anexe ao caminho atual.
-        if (strcmp(fs_info->current_path, "/") != 0) {
-            strcat(fs_info->current_path, "/");
-        }
-        strcat(fs_info->current_path, path);
-    }
+    strcpy(fs_info->current_path, new_path);
 }
+
+void attr(ext2_info* fs_info, char* path) {
+    char path_copy[1024];
+    strcpy(path_copy, path);
+    unsigned int inode_number = find_inode_number_by_path(fs_info, path);
+
+    if (inode_number == 0) {
+        printf("file not found!");
+    }
+
+    inode_struct inode = read_inode_by_number(fs_info, inode_number);
+    print_permissions(inode.i_mode);
+    printf("\t");
+
+    printf("%hu\t%hu", inode.i_uid, inode.i_gid);
+
+    printf("%.1f KiB\t", inode.i_size / 1024.0);
+    char buffer[1024];
+    format_date(inode.i_atime, buffer, 1024);
+    printf("%s\n", buffer);
+}
+

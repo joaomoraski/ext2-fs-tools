@@ -102,6 +102,8 @@ int main() {
             printf("%s\n", fs_info.current_path);
         } else if (strcmp(args[0], "cd") == 0) {
             cd(&fs_info, args[1]);
+        } else if (strcmp(args[0], "attr") == 0) {
+            attr(&fs_info, args[1]);
         } else {
             printf("command not found\n");
         }
