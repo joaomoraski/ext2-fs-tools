@@ -75,7 +75,7 @@ unsigned int find_inode_number_by_path(ext2_info* fs_info, char *path) {
             return 0;
         }
 
-        // Ler o data block do diretorio atual
+        // ler o data block do diretorio atual
         char tmp[1024];
         read_data_block(fs_info, inode.i_block[0], tmp, sizeof(tmp));
 
@@ -86,7 +86,7 @@ unsigned int find_inode_number_by_path(ext2_info* fs_info, char *path) {
         while (bytes_read < fs_info->block_size) {
             dir_entry* entry = (dir_entry*)actual_pointer;
 
-            // Se o tamanho do diretorio é 0 tem algo errado
+            // se o tamanho do diretorio é 0 tem algo errado
             if (entry->rec_len == 0) { break; }
 
             // 0 significa excluido ou vazio

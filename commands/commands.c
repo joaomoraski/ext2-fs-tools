@@ -10,6 +10,9 @@
 #include "../ext2-impl/ext2-fs-methods.h"
 #include "../ext2-impl/ext2_structs.h"
 
+void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
+                      long* bytes_read);
+
 void info(ext2_info fs_info) {
     super_block super_block = fs_info.sb;
     unsigned int block_size = fs_info.block_size;
@@ -257,8 +260,9 @@ void attr(ext2_info* fs_info, char* path) {
     }
 
     inode_struct inode = read_inode_by_number(fs_info, inode_number);
-    print_permissions(inode.i_mode);
-    printf("\t");
+    char permissions_string[100];
+    mount_permissions_string(inode.i_mode, permissions_string);
+    printf("%s\t", permissions_string);
 
     printf("%hu\t%hu", inode.i_uid, inode.i_gid);
 
@@ -268,3 +272,138 @@ void attr(ext2_info* fs_info, char* path) {
     printf("%s\n", buffer);
 }
 
+void cat(ext2_info* fs_info, char* path) {
+    char path_copy[1024];
+    strcpy(path_copy, path);
+    unsigned int inode_number = find_inode_number_by_path(fs_info, path);
+
+    if (inode_number == 0) {
+        printf("file not found!");
+    }
+
+    inode_struct inode = read_inode_by_number(fs_info, inode_number);
+    if (is_dir(inode.i_mode)) {
+        printf("cat: '%s': É um diretório", path); // roubei o padrao do linux
+        // TODO colocar esse padrao em todos os logs de erro
+        return;
+    }
+
+    long total_length = inode.i_size;
+    long bytes_read = 0;
+
+    char block_buffer[fs_info->block_size];
+
+    bool read_done = false;
+
+    // apenas lidando com 12 entradas
+    // 12, 13 e 14 sao ponteiros indiretos
+    for (int i = 0; i < 12; ++i) {
+        unsigned int block_number = inode.i_block[i];
+
+        // previnir de printar lixo de memoria
+        // não tem mais blocos de dados
+        if (block_number == 0) {
+            break;
+        }
+
+        print_data_block(fs_info, block_number, block_buffer, &total_length, &bytes_read);
+
+        // se o total de lidos for maior ou igual ao tamanho total, sai do loop
+        // e seta a variavel para indicar que ja acabou de ler
+        if (bytes_read >= total_length) {
+            read_done = true;
+            break;
+        }
+    }
+
+    // bloco indireto
+    // contem uma lista de ponteiros para outros blocos de dados
+    // inode -> bloco de ponteiros -> bloco de dados
+    if (!read_done && inode.i_block[12] != 0) {
+        // Este bloco contém uma lista de ponteiros para blocos de dados.
+        // 256 ponteiros cada pointer tem 4 bytes, 1024/4 = 256
+        unsigned int pointers_block[256];
+        read_data_block(fs_info, inode.i_block[12], (char*)pointers_block, fs_info->block_size);
+
+        // loop pelos ponteiros lidos
+        for (int i = 0; i < 256; i++) {
+            unsigned int block_number = pointers_block[i];
+            if (block_number == 0) continue; // ignora este bloco
+
+            print_data_block(fs_info, block_number, block_buffer, &total_length, &bytes_read);
+
+            // seta a variavel para indicar que ja acabou de ler
+            if (bytes_read >= total_length) {
+                read_done = true;
+                break;
+            }
+        }
+    }
+
+    // bloco indireto duplo
+    // aponta para um bloco que contem a lista de ponteiros
+    // e cada um desses ponteiros aponta para outro bloco
+    // inode -> bloco de ponteiros 1 -> bloco de ponteiros 2 -> bloco de dados
+    if (!read_done && inode.i_block[13] != 0) {
+        // ponteiros level 1
+        unsigned int lv1_pointers[256];
+        read_data_block(fs_info, inode.i_block[13], (char*)lv1_pointers, fs_info->block_size);
+
+        // loop nos ponteiros
+        for (int i = 0; i < 256; i++) {
+            if (lv1_pointers[i] == 0) continue;
+
+            // le o segundo bloco de ponteiros
+            // ponteiros de lv 2
+            unsigned int lv2_pointers[256];
+            read_data_block(fs_info, lv1_pointers[i], (char*)lv2_pointers, fs_info->block_size);
+
+            // loop no segundo level de ponteiros, que apontam para dados
+            for (int j = 0; j < 256; j++) {
+                unsigned int block_number = lv2_pointers[j];
+                if (block_number == 0) continue;
+
+                print_data_block(fs_info, block_number, block_buffer, &total_length, &bytes_read);
+
+                // seta a variavel para indicar que ja acabou de ler
+                if (bytes_read >= total_length) {
+                    read_done = true;
+                    break;
+                }
+            }
+
+            // se terminou de ler sai do for de cima
+            if (read_done) {
+                break;
+            }
+        }
+    }
+
+    // nao é necessario o i_block[14] por conta do que a doc fala:
+    //      https://www.nongnu.org/ext2-doc/ext2.html#i-block:~:text=The%2014th%20entry,doubly%2Dindirect%20block.
+    // O ponteiro indireto triplo (i_block[14]) seria a mesma lógica com mais um loop aninhado,
+    // mas para arquivos de até 64MB, o indireto duplo já é suficiente.
+    printf("\n");
+    fflush(stdout); // garante a impressão total na tela antes de seguir
+}
+
+
+// função para facilitar a impressão na tela, ja repetida em 3 lugares diferentes
+void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
+                      long* bytes_read) {
+    // le o data block
+    read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
+    // logica para garantir a impressão de lixo
+    // calcular quantos bytes ainda faltam para ser lido o arquivo todo
+    long remaining_bytes = total_length - bytes_read;
+
+    // decide quantos bytes imprimir do bloco atual
+    int bytes_to_print = (remaining_bytes < fs_info->block_size) ? remaining_bytes : fs_info->block_size;
+    // se o que falta é menor que o bloco, imprime so o que falta
+    // se não, imprime o bloco inteiro
+
+    // usar fwrite por que ele imprime os dados brutos(binarios)
+    // não para em \0
+    fwrite(block_buffer, 1, bytes_to_print, stdout);
+    bytes_read += bytes_to_print;
+}

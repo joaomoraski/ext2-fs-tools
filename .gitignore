@@ -12,6 +12,7 @@ Created by https://www.toptal.com/developers/gitignore/api/clion+all,visualstudi
 .idea/**/dictionaries
 .idea/**/shelf
 
+ext2shell
 *.iso
 
 # AWS User-specific

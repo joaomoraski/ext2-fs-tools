@@ -104,6 +104,8 @@ int main() {
             cd(&fs_info, args[1]);
         } else if (strcmp(args[0], "attr") == 0) {
             attr(&fs_info, args[1]);
+        } else if (strcmp(args[0], "cat") == 0) {
+            cat(&fs_info, args[1]);
         } else {
             printf("command not found\n");
         }
