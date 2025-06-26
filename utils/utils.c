@@ -4,7 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-#include <sys/stat.h>
+#include <unistd.h>
+#include "../ext2-impl/ext2-defs.h"
 
 void format_date(uint32_t timestamp, char* buffer, int buffer_size) {
     time_t brute_time = timestamp;
@@ -84,37 +85,40 @@ void mount_permissions_string(uint16_t i_mode, char* permission_string) {
     unsigned int file_type = i_mode & 0xF000; // Isola os 4 bits do tipo do arquivo PPI
 
     // comparar o tipo isolado para os valores necessarios
-    if (file_type == 0x4000) { // S_IFDIR
+    if (file_type == EXT2_S_IFDIR) { // S_IFDIR
         permission_string[0] = 'd';
-    } else if (file_type == 0x8000) { // S_IFREG
+    } else if (file_type == EXT2_S_IFREG) { // S_IFREG
         permission_string[0] = 'f';
-    } else if (file_type == 0xA000) { // S_IFLNK
+    } else if (file_type == EXT2_S_IFLNK) { // S_IFLNK
         permission_string[0] = 'l';
-    } else {
+    } else { // ignora outros tipos para este trabalho
         permission_string[0] = '-';
     }
-
-
     // formato usado como base é o mesmo do ls -l
     // drwxr-xr--
     // d = diretorio, rwx -> dono, r-x -> grupo, r-- -> outros
     // somando 7 = 4 2 1
 
     // permissoes do dono (user)
-    permission_string[1] = (i_mode & 0400) ? 'r' : '-';
-    permission_string[2] = (i_mode & 0200) ? 'w' : '-';
-    permission_string[3] = (i_mode & 0100) ? 'x' : '-';
+    permission_string[1] = (i_mode & EXT2_S_IRUSR) ? 'r' : '-';
+    permission_string[2] = (i_mode & EXT2_S_IWUSR) ? 'w' : '-';
+    permission_string[3] = (i_mode & EXT2_S_IXUSR) ? 'x' : '-';
 
     // permissoes do grupo
-    permission_string[4] = (i_mode & 0040) ? 'r' : '-';
-    permission_string[5] = (i_mode & 0020) ? 'w' : '-';
-    permission_string[6] = (i_mode & 0010) ? 'x' : '-';
+    permission_string[4] = (i_mode & EXT2_S_IRGRP) ? 'r' : '-';
+    permission_string[5] = (i_mode & EXT2_S_IWGRP) ? 'w' : '-';
+    permission_string[6] = (i_mode & EXT2_S_IXGRP) ? 'x' : '-';
 
     // permissoes de outros
-    permission_string[7] = (i_mode & 0004) ? 'r' : '-';
-    permission_string[8] = (i_mode & 0002) ? 'w' : '-';
-    permission_string[9] = (i_mode & 0001) ? 'x' : '-';
+    permission_string[7] = (i_mode & EXT2_S_IROTH) ? 'r' : '-';
+    permission_string[8] = (i_mode & EXT2_S_IWOTH) ? 'w' : '-';
+    permission_string[9] = (i_mode & EXT2_S_IXOTH) ? 'x' : '-';
 
     // finaliza a string
     permission_string[10] = '\0';
+}
+
+void point_and_write(int fd, long offset, int whence, const void* buffer, size_t bytes_to_write) {
+    lseek(fd, offset, whence);
+    write(fd, buffer, bytes_to_write);
 }

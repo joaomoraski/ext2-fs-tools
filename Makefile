@@ -18,6 +18,11 @@ run: all
 clean:
 	rm -f $(TARGET)
 
+image:
+	rm $(IMAGE_NAME)
+	tar -xf myext2image.tar.gz
+
+
 # --- Nem sei se vou usar isso ainda ---
 
 generate-ext2:

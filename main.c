@@ -11,7 +11,7 @@
 #include <sys/types.h>
 #include <readline/readline.h>
 #include <readline/history.h>
-// #include <ext2fs/ext2fs.h> // To usando pra pegar o codigo de exemplo pela IDE
+#include <ext2fs/ext2fs.h> // To usando pra pegar o codigo de exemplo pela IDE
 #include "ext2-impl/ext2-fs-methods.h"
 #include "commands/commands.h"
 
@@ -106,6 +106,10 @@ int main() {
             attr(&fs_info, args[1]);
         } else if (strcmp(args[0], "cat") == 0) {
             cat(&fs_info, args[1]);
+        } else if (strcmp(args[0], "touch") == 0) {
+            touch(&fs_info, args[1]);
+        } else if (strcmp(args[0], "mkdir") == 0) {
+            cmd_mkdir(&fs_info, args[1]);
         } else {
             printf("command not found\n");
         }

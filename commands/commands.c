@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "../utils/utils.h"
 #include "../ext2-impl/ext2-fs-methods.h"
@@ -234,14 +235,12 @@ void cd(ext2_info* fs_info, char* path) {
 
     inode_struct inode = read_inode_by_number(fs_info, inode_number);
 
-    if (!S_ISDIR(inode.i_mode)) {
+    if (!is_dir(inode.i_mode)) {
         printf("'%s': Não é um diretório\n", path);
         return;
     }
-
     // atualiza o numero do inode atual na estrutura principal
     fs_info->current_dir_inode = inode_number;
-
 
     // atualizar a string do caminho
     char new_path[1024];
@@ -406,4 +405,142 @@ void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block
     // não para em \0
     fwrite(block_buffer, 1, bytes_to_print, stdout);
     bytes_read += bytes_to_print;
+}
+
+void touch(ext2_info* fs_info, char* path_to_file) {
+    char path_copy[1024];
+    strcpy(path_copy, path_to_file);
+    char file_name[256];
+    unsigned int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_copy, file_name);
+    if (parent_inode_number == 0) {
+        printf("Diretorio não encontrado!"); // todo pegar o padrao do linux
+        return;
+    }
+
+    inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_number);
+    if (!is_dir(parent_inode.i_mode)) {
+        printf("nao é diretorio"); // todo pegar o padrao do linux
+        return;
+    }
+
+    // percorrer o data block verificando se o arquivo existe
+    if (verify_file_exists(fs_info, parent_inode.i_block[0], file_name)) {
+        printf("file already exists\n"); // todo pegar o padrao do linux
+        return;
+    }
+
+    // verificar se o bloco possui espaço para a alocação de novas coisas
+    bool has_space = add_dir_entry(fs_info, parent_inode_number, 0, file_name, 0, false);
+    if (!has_space) {
+        // print de erro ja esta la dentro
+        return;
+    }
+
+    unsigned int new_inode_num = find_and_allocate_item(fs_info, 'i');
+    if (new_inode_num == 0) { // ocorreu um erro
+        // print ja esta dentro da função
+        return;
+    }
+
+    // seta tudo com 0 inicialmente
+    // como é touch, garante que o i_block[0-14] é preenchido com 0
+    inode_struct new_inode = {0};
+    // as mascaras de permissao foram tiradas da lib do ext2
+    new_inode.i_mode = EXT2_S_IFREG | EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IRGRP | EXT2_S_IROTH;; // frw-r--r--
+    new_inode.i_size = 0;
+    new_inode.i_blocks = 0;
+    new_inode.i_links_count = 1;
+    time_t timestamp = time(NULL);
+    new_inode.i_ctime = timestamp;
+    new_inode.i_mtime = timestamp;
+    new_inode.i_atime = timestamp;
+
+    write_inode_by_number(fs_info, new_inode_num, &new_inode);
+
+    add_dir_entry(fs_info, parent_inode_number, new_inode_num, file_name, EXT2_FT_REG_FILE, true);
+}
+
+void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
+    char path_copy[1024];
+    strcpy(path_copy, path_to_file);
+    char new_dir_name[256];
+
+    unsigned int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_to_file, new_dir_name);
+    if (parent_inode_number == 0) {
+        // find_parent_inode... já deve ter avisado que o caminho pai não existe.
+        return;
+    }
+
+    inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_number);
+    if (!is_dir(parent_inode.i_mode)) {
+        printf("mkdir: parte do caminho não é diretorio");
+        return;
+    }
+
+    if (verify_file_exists(fs_info, parent_inode.i_block[0], new_dir_name)) {
+        printf("mkdir: não foi possível criar o diretório \"%s\": Arquivo existe\n", path_to_file);
+        return;
+    }
+
+    // verificar se o bloco possui espaço para a alocação de novas coisas
+    bool has_space = add_dir_entry(fs_info, parent_inode_number, 0, new_dir_name, 0, false);
+    if (!has_space) {
+        // print de erro ja esta la dentro
+        return;
+    }
+
+    // cria o inode do diretorio, para indicar para um datablock onde vai ter os dados do diretorio
+    unsigned int new_dir_inode_num = find_and_allocate_item(fs_info, 'i');
+    if (new_dir_inode_num == 0) return;
+    unsigned int new_data_block_num = find_and_allocate_item(fs_info, 'b');
+    if (new_data_block_num == 0) {
+        deallocate_item(fs_info, new_dir_inode_num, 'i');
+        return;
+    }
+
+    // seta tudo com 0 inicialmente
+    // como é touch, garante que o i_block[0-14] é preenchido com 0
+    inode_struct new_inode = {0};
+    // as mascaras de permissao foram tiradas da lib do ext2
+    new_inode.i_mode = EXT2_S_IFDIR | // d
+        EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR | // dono rwx
+        EXT2_S_IRGRP | EXT2_S_IXGRP | // grupo r-x
+        EXT2_S_IROTH | EXT2_S_IXOTH;; // outros r-x | fim => drw-r--r--
+
+    new_inode.i_size = fs_info->block_size; // ocupa 1 bloco
+    new_inode.i_block[0] = new_data_block_num;
+    new_inode.i_links_count = 2; // começa com 2 por conta do . e ..
+    time_t timestamp = time(NULL);
+    new_inode.i_ctime = timestamp;
+    new_inode.i_mtime = timestamp;
+    new_inode.i_atime = timestamp;
+
+    write_inode_by_number(fs_info, new_dir_inode_num, &new_inode);
+
+    char block_buffer[fs_info->block_size];
+    memset(block_buffer, 0, fs_info->block_size);
+
+    dir_entry* self_entry = (dir_entry*)block_buffer;
+    self_entry->inode = new_dir_inode_num;
+    self_entry->name_len = 1;
+    self_entry->file_type = EXT2_FT_DIR;
+    strcpy(self_entry->name, ".");
+    // 8 bytes da estrutura fixa, 1 de tamanho do nome + 3 de padding ?
+    self_entry->rec_len = (8 + self_entry->name_len + 3) & ~3; // 12
+
+    // move o ponteiro para dps da primeira entrada
+    char* pointer = block_buffer + self_entry->rec_len;
+    dir_entry* parent_entry = (dir_entry*)pointer;
+    parent_entry->inode = parent_inode_number;
+    parent_entry->name_len = 2;
+    parent_entry->file_type = EXT2_FT_DIR;
+    strcpy(parent_entry->name, "..");
+    // como é o ultimo, mesma logica do inode
+    // aloca o tamanho total restante
+    parent_entry->rec_len = fs_info->block_size - self_entry->rec_len;
+
+    point_and_write(fs_info->fd, new_data_block_num * fs_info->block_size, SEEK_SET, block_buffer, fs_info->block_size);
+
+    // adiciona o novo diretorio no diretorio pai
+    add_dir_entry(fs_info, parent_inode_number, new_dir_inode_num, new_dir_name, EXT2_FT_DIR, true);
 }
