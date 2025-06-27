@@ -123,16 +123,12 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
 
             // 2. avança o ponteiro para o começo do espaço livre novo
             char* new_entry_pointer = pointer + current_entry->rec_len;
-            // pointer += current_entry->rec_len;
-
-            // printf("%p\n", (void*)new_entry_pointer);
-            // printf("%p\n", (void*)pointer);
 
             // criar a nova entrada
             dir_entry* new_entry = (dir_entry*)new_entry_pointer;
             new_entry->inode = new_inode_num;
             new_entry->name_len = strlen(filename);
-            strcpy(new_entry->name, filename);
+            memcpy(new_entry->name, filename, new_entry->name_len);
             new_entry->file_type = file_type;
 
             // rec len da nova entrada vai ser o tamanho do buraco achado
