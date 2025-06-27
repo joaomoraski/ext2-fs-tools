@@ -10,6 +10,8 @@ void attr(ext2_info* fs_info, char* path);
 void cat(ext2_info* fs_info, char* path);
 void touch(ext2_info* fs_info, char* path_to_file);
 void cmd_mkdir(ext2_info* fs_info, char* path);
+void rm(ext2_info* fs_info, char* path);
+void cmd_rmdir(ext2_info* fs_info, char* path);
 void print_superblock(ext2_info fs_info);
 void print_groups(ext2_info fs_info);
 void print_inode(ext2_info fs_info, int inode_number);

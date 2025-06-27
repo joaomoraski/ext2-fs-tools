@@ -101,17 +101,43 @@ int main() {
         } else if (strcmp(args[0], "pwd") == 0) {
             printf("%s\n", fs_info.current_path);
         } else if (strcmp(args[0], "cd") == 0) {
-            cd(&fs_info, args[1]);
+            if (args[1] != NULL) {
+                cd(&fs_info, args[1]);
+            } else {
+                printf("cd: falta operando.\n");
+            }
         } else if (strcmp(args[0], "attr") == 0) {
-            attr(&fs_info, args[1]);
+            if (args[1] != NULL) {
+                attr(&fs_info, args[1]);
+            } else {
+                printf("attr: falta operando.\n");
+            }
         } else if (strcmp(args[0], "cat") == 0) {
-            cat(&fs_info, args[1]);
+            if (args[1] != NULL) {
+                cat(&fs_info, args[1]);
+            } else {
+                printf("cat: falta operando.\n");
+            }
         } else if (strcmp(args[0], "touch") == 0) {
-            touch(&fs_info, args[1]);
+            if (args[1] != NULL) {
+                touch(&fs_info, args[1]);
+            } else {
+                printf("touch: falta operando.\n");
+            }
         } else if (strcmp(args[0], "mkdir") == 0) {
-            cmd_mkdir(&fs_info, args[1]);
+            if (args[1] != NULL) {
+                cmd_mkdir(&fs_info, args[1]);
+            } else {
+                printf("mkdir: falta operando.\n");
+            }
+        } else if (strcmp(args[0], "rm") == 0) {
+            if (args[1] != NULL) {
+                rm(&fs_info, args[1]);
+            } else {
+                printf("rm: falta operando.\n");
+            }
         } else {
-            printf("command not found\n");
+            printf("command not found: %s\n", args[0]);
         }
 
         free(input);

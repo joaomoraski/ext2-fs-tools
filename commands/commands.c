@@ -254,9 +254,7 @@ void attr(ext2_info* fs_info, char* path) {
     strcpy(path_copy, path);
     unsigned int inode_number = find_inode_number_by_path(fs_info, path);
 
-    if (inode_number == 0) {
-        printf("file not found!");
-    }
+    if (inode_number == 0) { return; }
 
     inode_struct inode = read_inode_by_number(fs_info, inode_number);
     char permissions_string[100];
@@ -295,7 +293,7 @@ void cat(ext2_info* fs_info, char* path) {
     bool read_done = false;
 
     // apenas lidando com 12 entradas
-    // 12, 13 e 14 sao ponteiros indiretos
+    // 13 e 14 sao ponteiros indiretos
     for (int i = 0; i < 12; ++i) {
         unsigned int block_number = inode.i_block[i];
 
@@ -543,4 +541,87 @@ void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
 
     // adiciona o novo diretorio no diretorio pai
     add_dir_entry(fs_info, parent_inode_number, new_dir_inode_num, new_dir_name, EXT2_FT_DIR, true);
+}
+
+
+void rm(ext2_info* fs_info, char* path) {
+    char filename[1024];
+    char path_copy[1024];
+    strcpy(path_copy, path);
+    int target_inode_number = find_inode_number_by_path(fs_info, path_copy);
+
+    if (target_inode_number == 0) {
+        // printf("rm: arquivo não existe");
+        return;
+    }
+
+    strcpy(path_copy, path);
+    int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_copy, filename);
+
+    inode_struct target_inode = read_inode_by_number(fs_info, target_inode_number);
+    if (is_dir(target_inode.i_mode)) {
+        // todo padronizar o erro para o linux
+        printf("rm: erro \"%s\" é um diretorio\n", filename);
+        return;
+    }
+
+    // apaga os blocos normais
+    for (int i = 0; i < 12; ++i) {
+        if (target_inode.i_block[i] != 0) {
+            deallocate_item(fs_info, target_inode.i_block[i], 'b');
+        }
+    }
+
+    // bloco indireto
+    // contem uma lista de ponteiros para outros blocos de dados
+    // inode -> bloco de ponteiros -> bloco de dados
+    if (target_inode.i_block[12] != 0) {
+        // ler os blocos que tem uma lista de ponteiros
+        unsigned int pointers_block[256];
+        read_data_block(fs_info, target_inode.i_block[12], (char*)pointers_block, fs_info->block_size);
+
+        // apagar cada bloco registrado
+
+        for (int i = 0; i < 256; i++) {
+            if (pointers_block[i] != 0) {
+                deallocate_item(fs_info, pointers_block[i], 'b');
+            }
+        }
+
+        deallocate_item(fs_info, target_inode.i_block[12], 'b');
+    }
+
+    // bloco indireto duplo
+    // aponta para um bloco que contem a lista de ponteiros
+    // e cada um desses ponteiros aponta para outro bloco
+    // inode -> bloco de ponteiros 1(1 bloco ocm varios ponteiros) -> bloco de ponteiros 2 -> bloco de dados
+    if (target_inode.i_block[13] != 0) {
+        // ler os blocos de lv 1
+        unsigned int lv1_pointers[256];
+        read_data_block(fs_info, target_inode.i_block[13], (char*)lv1_pointers, fs_info->block_size);
+
+        for (int i = 0; i < 256; i++) {
+            if (lv1_pointers[i] == 0) continue;
+            // percorrer o lv1 lendo o lv2
+            unsigned int lv2_pointers[256];
+            read_data_block(fs_info, lv1_pointers[i], (char*)lv2_pointers, fs_info->block_size);
+            for (int j = 0; j < 256; j++) {
+                unsigned int block_number = lv2_pointers[j];
+                if (block_number == 0) continue;
+                deallocate_item(fs_info, block_number, 'b');
+            }
+            deallocate_item(fs_info, lv1_pointers[i], 'b');
+        }
+
+        deallocate_item(fs_info, target_inode.i_block[13], 'b');
+    }
+
+    // 14 nao é necessario porque o 13 ja cobre os 64mb
+
+    deallocate_item(fs_info, target_inode_number, 'i');
+    remove_dir_entry(fs_info, parent_inode_number, filename);
+}
+
+
+void cmd_rmdir(ext2_info* fs_info, char* path) {
 }

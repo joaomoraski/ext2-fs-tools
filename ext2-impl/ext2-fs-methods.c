@@ -78,64 +78,132 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
     char block_buffer[fs_info->block_size];
     read_data_block(fs_info, parent_inode.i_block[0], block_buffer, sizeof(block_buffer));
 
-    char* actual_pointer = block_buffer;
+    int required_size_for_new_entry = (8 + strlen(filename) + 3) & ~3;
+
+    char* pointer = block_buffer;
     int bytes_read = 0;
-    dir_entry* last_entry = NULL;
 
     while (bytes_read < fs_info->block_size) {
-        last_entry = (dir_entry*)actual_pointer;
+        dir_entry* current_entry = (dir_entry*)pointer;
+
+        // verifica o caso especial(apagar o primeiro dir_entry)
+        if (current_entry->inode == 0 &&
+            current_entry->rec_len >= required_size_for_new_entry) {
+            // indica que é um buraco disponivel e ja retorna
+            if (!commit_changes) return 1;
+
+            current_entry->inode = new_inode_num;
+            current_entry->name_len = strlen(filename);
+            current_entry->file_type = file_type;
+            strcpy(current_entry->name, filename);
+            // rec len fica o mesmo pq estamos reutilizando a entrada
+
+            point_and_write(fs_info->fd, parent_inode.i_block[0] * fs_info->block_size, SEEK_SET,
+                            block_buffer, fs_info->block_size);
+            return 1;
+        }
+
+        // calcula o tamanho que a entrada atual precisa de verdade
+        // 8 fixo + tamanho e arredonda pra 4
+        int real_size_of_current_entry = (8 + current_entry->name_len + 3) & ~3;
+
+        // encontra o espaço vazio criado pelo rm, ou outros motivos
+        int empty_space = current_entry->rec_len - real_size_of_current_entry;
+
+        // se o espaço vazio for o suficiente para encaixar o novo
+        if (empty_space >= required_size_for_new_entry) {
+            // insere o novo aq
+
+            if (!commit_changes) return 1;
+            // guarda o reclen da entrada que tinha o buraco
+            int original_rec_len = current_entry->rec_len;
+
+            // 1. encolhe a entrada para o tamanho real necessário
+            current_entry->rec_len = real_size_of_current_entry;
+
+            // 2. avança o ponteiro para o começo do espaço livre novo
+            char* new_entry_pointer = pointer + current_entry->rec_len;
+            // pointer += current_entry->rec_len;
+
+            // printf("%p\n", (void*)new_entry_pointer);
+            // printf("%p\n", (void*)pointer);
+
+            // criar a nova entrada
+            dir_entry* new_entry = (dir_entry*)new_entry_pointer;
+            new_entry->inode = new_inode_num;
+            new_entry->name_len = strlen(filename);
+            strcpy(new_entry->name, filename);
+            new_entry->file_type = file_type;
+
+            // rec len da nova entrada vai ser o tamanho do buraco achado
+            new_entry->rec_len = original_rec_len - current_entry->rec_len;
+
+            point_and_write(fs_info->fd, parent_inode.i_block[0] * fs_info->block_size, SEEK_SET,
+                            block_buffer, fs_info->block_size);
+
+            // indica que é possivel, e se for commit=true ja foi cadastrada
+            return 1;
+        }
+
 
         // caso o rec_len desta entrada nos leva exatamente até o final do bloco,
         // então ele é a última entrada.
-        if (bytes_read + last_entry->rec_len == fs_info->block_size) {
-            break; // achou a ultima, para de procurar.
-        }
-        actual_pointer += last_entry->rec_len;
-        bytes_read += last_entry->rec_len;
+        bytes_read += current_entry->rec_len;
+        pointer += current_entry->rec_len;
     }
 
-    // recalcula o tamanho que a last_entry precisa.
-    // 8 é o tamanho das variaveis "fixas" da struct
-    // (8 + strlen() + 3) & ~3 arredonda o tamanho para o multiplos de 4.
-    int real_size_last_entry = (8 + last_entry->name_len + 3) & ~3;
-
-    // calcula o espaco da nova entrada
-    int new_entry_size = (8 + strlen(filename) + 3) & ~3;
-
-    // verifica se o espaço que estava na ultima entrada é o suficiente pra ela e + 1
-    if (real_size_last_entry + new_entry_size <= last_entry->rec_len) {
-        if (!commit_changes) {
-            // nao aplicar as mudancas
-            return 1; // tem espaço para ser adicionado
-        }
-
-
-        // salva o espaço total disponivel da ultima entrada
-        int original_rec_len = last_entry->rec_len;
-
-        // diminui o tamanho da last_entry para o tamanho real novo
-        last_entry->rec_len = real_size_last_entry;
-
-        // avança o ponteiro para a ultima entrada encolhida
-        actual_pointer += last_entry->rec_len;
-
-        // cria uma nova entrada de diretorio
-        dir_entry* new_entry = (dir_entry*)actual_pointer;
-        new_entry->inode = new_inode_num;
-        new_entry->name_len = strlen(filename);
-        strcpy(new_entry->name, filename);
-        new_entry->file_type = file_type;
-
-        // volta o tamanho da last_entry para o tamanho real
-        new_entry->rec_len = original_rec_len - last_entry->rec_len;
-
-        point_and_write(fs_info->fd, parent_inode.i_block[0] * fs_info->block_size, SEEK_SET, block_buffer,
-                        fs_info->block_size);
-
-        return 1;
-    }
     // nao tem espaço no bloco.
-    printf("Erro: Não há espaço no diretório para criar o novo arquivo/diretorio.\n"); // todo padronizar isso mais tarde
+    printf("Erro: Não há espaço no diretório para criar o novo arquivo/diretorio.\n");
+    // todo padronizar isso mais tarde
+    return 0;
+}
+
+int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* filename_to_remove) {
+    inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_num);
+
+    char block_buffer[fs_info->block_size];
+    read_data_block(fs_info, parent_inode.i_block[0], block_buffer, sizeof(block_buffer));
+
+    char* pointer = block_buffer;
+    int bytes_read = 0;
+    dir_entry* current_entry = NULL;
+    dir_entry* previous_entry = NULL;
+
+    while (bytes_read < fs_info->block_size) {
+        current_entry = (dir_entry*)pointer;
+
+        if (current_entry->rec_len == 0) break;
+
+        if (current_entry->inode != 0 &&
+            strncmp(filename_to_remove, current_entry->name, current_entry->name_len) == 0 &&
+            strlen(filename_to_remove) == current_entry->name_len) {
+            // primeira entrada que olhamos ja é a que é para ser removida
+            if (previous_entry == NULL) {
+                // Caso especial, remover a primeira entrada
+                // n tem entrada anterior para esticar
+                current_entry->inode = 0;
+            } else {
+                // esticar o rec_len baseado na anterior
+                previous_entry->rec_len += current_entry->rec_len;
+            }
+
+            point_and_write(fs_info->fd, parent_inode.i_block[0] * fs_info->block_size, SEEK_SET,
+                            block_buffer, fs_info->block_size);
+            return 1; // sucessp
+        }
+
+        // caso o rec_len desta entrada nos leva exatamente até o final do bloco,
+        // então ele é a última entrada
+
+        // seta o previous para ser o antigo current
+        previous_entry = current_entry;
+        bytes_read += current_entry->rec_len;
+        pointer += current_entry->rec_len;
+    }
+
+    // nao tem espaço no bloco.
+    printf("Erro: arquivo não encontrado neste diretorio.\n");
+    // todo padronizar isso mais tarde
     return 0;
 }
 
@@ -174,8 +242,8 @@ unsigned int find_inode_number_by_path(ext2_info* fs_info, char* path) {
             // 0 significa excluido ou vazio
             if (entry->inode != 0) {
                 // comparar o nome da entrada com o caminho atual e o tamanho
-                if (strncmp(splited_path, entry->name, entry->name_len) == 0 && strlen(splited_path) == entry->
-                    name_len) {
+                if (strncmp(splited_path, entry->name, entry->name_len) == 0 &&
+                    strlen(splited_path) == entry->name_len) {
                     next_inode = entry->inode;
                     break;
                 }
