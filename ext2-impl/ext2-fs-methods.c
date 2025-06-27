@@ -86,23 +86,6 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
     while (bytes_read < fs_info->block_size) {
         dir_entry* current_entry = (dir_entry*)pointer;
 
-        // verifica o caso especial(apagar o primeiro dir_entry)
-        if (current_entry->inode == 0 &&
-            current_entry->rec_len >= required_size_for_new_entry) {
-            // indica que é um buraco disponivel e ja retorna
-            if (!commit_changes) return 1;
-
-            current_entry->inode = new_inode_num;
-            current_entry->name_len = strlen(filename);
-            current_entry->file_type = file_type;
-            strcpy(current_entry->name, filename);
-            // rec len fica o mesmo pq estamos reutilizando a entrada
-
-            point_and_write(fs_info->fd, parent_inode.i_block[0] * fs_info->block_size, SEEK_SET,
-                            block_buffer, fs_info->block_size);
-            return 1;
-        }
-
         // calcula o tamanho que a entrada atual precisa de verdade
         // 8 fixo + tamanho e arredonda pra 4
         int real_size_of_current_entry = (8 + current_entry->name_len + 3) & ~3;
@@ -158,6 +141,8 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
     // todo padronizar isso mais tarde
     return 0;
 }
+
+// rmdir: falhou em remover 'teste': Diretório não vazio
 
 int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* filename_to_remove) {
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_num);
