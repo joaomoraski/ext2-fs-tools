@@ -624,4 +624,54 @@ void rm(ext2_info* fs_info, char* path) {
 
 
 void cmd_rmdir(ext2_info* fs_info, char* path) {
+    char filename[1024];
+    char path_copy[1024];
+    strcpy(path_copy, path);
+    int target_inode_number = find_inode_number_by_path(fs_info, path_copy);
+
+    if (target_inode_number == 0) {
+        // printf("rm: arquivo não existe");
+        return;
+    }
+
+    strcpy(path_copy, path);
+    int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_copy, filename);
+
+    inode_struct target_inode = read_inode_by_number(fs_info, target_inode_number);
+    if (!is_dir(target_inode.i_mode)) {
+        printf("rmdir: falhou em remover '%s': Não é um diretorio\n", filename);
+        return;
+    }
+
+    char tmp[1024];
+    read_data_block(fs_info, target_inode.i_block[0], tmp, sizeof(tmp));
+
+    char* actual_pointer = tmp;
+    int bytes_read = 0;
+
+    while (bytes_read < BASE_BLOCK) {
+        dir_entry* entry = (dir_entry*)actual_pointer;
+
+        if (entry->rec_len == 0) break;
+
+        // 0 significa excluido ou vazio
+        if (entry->inode != 0 && strcmp(entry->name, ".") != 0 && strcmp(entry->name, "..") != 0) {
+            printf("rmdir: falhou em remover '%s': Diretório não está vazio", filename);
+            return;
+        }
+
+        actual_pointer += entry->rec_len;
+        bytes_read += entry->rec_len;
+    }
+
+    inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_number);
+    parent_inode.i_links_count--;
+    write_inode_by_number(fs_info, parent_inode_number, &parent_inode);
+
+    // desalocar o bloco 0(especificaçao diz que o diretorio ocupa apenas 1 bloco)
+    deallocate_item(fs_info, target_inode.i_block[0], 'b');
+    // desalocaçao do inode do diretorio
+    deallocate_item(fs_info, target_inode_number, 'i');
+    // remover o dir_entry do diretorio
+    remove_dir_entry(fs_info, parent_inode_number, filename);
 }
