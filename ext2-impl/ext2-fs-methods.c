@@ -124,6 +124,11 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
             // 2. avança o ponteiro para o começo do espaço livre novo
             char* new_entry_pointer = pointer + current_entry->rec_len;
 
+            // Como esta aproveitando buracos, é necessario limpar o "buraco" por completo
+            // isso pq, se a entrada nova for menor que o tamanho total do buraco, ele pode corromper algo
+            // e outro pode ser criado no mesmo buraco
+            memset(new_entry_pointer, 0, original_rec_len - real_size_of_current_entry);
+
             // criar a nova entrada
             dir_entry* new_entry = (dir_entry*)new_entry_pointer;
             new_entry->inode = new_inode_num;
