@@ -142,7 +142,6 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
     return 0;
 }
 
-// rmdir: falhou em remover 'teste': Diretório não vazio
 
 int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* filename_to_remove) {
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_num);

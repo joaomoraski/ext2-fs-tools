@@ -142,6 +142,18 @@ int main() {
             } else {
                 printf("rmdir: falta operando.\n");
             }
+        } else if (strcmp(args[0], "cp") == 0) {
+            if (args[2] != NULL) {
+                cp(&fs_info, args[1], args[2]);
+            } else {
+                printf("cp: falta operando.\n");
+            }
+        } else if (strcmp(args[0], "mv") == 0) {
+            if (args[2] != NULL) {
+                mv(&fs_info, args[1], args[2]);
+            } else {
+                printf("mv: falta operando.\n");
+            }
         } else {
             printf("command not found: %s\n", args[0]);
         }

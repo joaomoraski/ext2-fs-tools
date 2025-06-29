@@ -381,13 +381,31 @@ void cat(ext2_info *fs_info, char *path) {
     fflush(stdout); // garante a impressão total na tela antes de seguir
 }
 
+void write_data_block_out(ext2_info *fs_info, unsigned int block_number, char block_buffer[], long total_length,
+                          long *bytes_read, FILE *target_file) {
+    // le o data block
+    read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
+    // evitar copiar lixo de memoria
+    // calcular quantos bytes ainda faltam para ser copiado
+    long remaining_bytes = total_length - *bytes_read;
+
+    // decide quantos bytes escrever do bloco atual
+    int bytes_to_write = (remaining_bytes < fs_info->block_size) ? remaining_bytes : fs_info->block_size;
+    // se o que falta é menor que o bloco, escreve so o que falta
+    // se não, escreve o bloco inteiro
+
+    // usar fwrite por que ele imprime os dados brutos(binarios)
+    // não para em \0
+    fwrite(block_buffer, 1, bytes_to_write, target_file);
+    *bytes_read += *bytes_read;
+}
 
 // função para facilitar a impressão na tela, ja repetida em 3 lugares diferentes
 void print_data_block(ext2_info *fs_info, unsigned int block_number, char *block_buffer, long *total_length,
                       long *bytes_read) {
     // le o data block
     read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
-    // logica para garantir a impressão de lixo
+    // evitar printar lixo de memoria
     // calcular quantos bytes ainda faltam para ser lido o arquivo todo
     long remaining_bytes = total_length - bytes_read;
 
@@ -678,3 +696,165 @@ void cmd_rmdir(ext2_info *fs_info, char *path) {
     // remover o dir_entry do diretorio
     remove_dir_entry(fs_info, parent_inode_number, filename);
 }
+
+int cp(ext2_info *fs_info, char *source_path, char *target_path) {
+    // write binary para ser mais facil a transição de dados
+    printf("%s\n", target_path);
+    FILE *target_file = fopen(target_path, "wb");
+    if (target_file == NULL) {
+        printf("cp: erro na abertura do arquivo no sistema\n");
+        return EXIT_FAILURE;
+    }
+    char copy_path[1024];
+    strcpy(copy_path, source_path);
+    unsigned int inode_number = find_inode_number_by_path(fs_info, copy_path);
+
+    if (inode_number == 0) {
+        printf("cp: erro, arquivo '%s', não existe", source_path);
+        return EXIT_FAILURE;
+    }
+
+    inode_struct inode = read_inode_by_number(fs_info, inode_number);
+
+    if (is_dir(inode.i_mode)) {
+        printf("cp: erro '%s' é um diretorio\n", source_path);
+        return EXIT_FAILURE;
+    }
+
+    long total_length = inode.i_size;
+    long bytes_read = 0;
+
+    char block_buffer[fs_info->block_size];
+
+    bool read_done = false;
+
+    // apenas lidando com 12 entradas
+    // 13 e 14 sao ponteiros indiretos
+    for (int i = 0; i < 12; ++i) {
+        unsigned int block_number = inode.i_block[i];
+
+        // previnir de copiar lixo de memoria
+        // não tem mais blocos de dados
+        if (block_number == 0) {
+            break;
+        }
+
+        write_data_block_out(fs_info, block_number, block_buffer, total_length, &bytes_read, target_file);
+
+        // se o total de lidos for maior ou igual ao tamanho total, sai do loop
+        // e seta a variavel para indicar que ja acabou de ler
+        if (bytes_read >= total_length) {
+            read_done = true;
+            break;
+        }
+    }
+
+    // bloco indireto
+    // contem uma lista de ponteiros para outros blocos de dados
+    // inode -> bloco de ponteiros -> bloco de dados
+    if (!read_done && inode.i_block[12] != 0) {
+        // Este bloco contém uma lista de ponteiros para blocos de dados.
+        // 256 ponteiros cada pointer tem 4 bytes, 1024/4 = 256
+        unsigned int pointers_block[256];
+        read_data_block(fs_info, inode.i_block[12], (char *) pointers_block, fs_info->block_size);
+
+        // loop pelos ponteiros lidos
+        for (int i = 0; i < 256; i++) {
+            unsigned int block_number = pointers_block[i];
+            if (block_number == 0) continue; // ignora este bloco
+
+            write_data_block_out(fs_info, block_number, block_buffer, total_length, &bytes_read, target_file);
+
+            // seta a variavel para indicar que ja acabou de ler
+            if (bytes_read >= total_length) {
+                read_done = true;
+                break;
+            }
+        }
+    }
+
+    // bloco indireto duplo
+    // aponta para um bloco que contem a lista de ponteiros
+    // e cada um desses ponteiros aponta para outro bloco
+    // inode -> bloco de ponteiros 1 -> bloco de ponteiros 2 -> bloco de dados
+    if (!read_done && inode.i_block[13] != 0) {
+        // ponteiros level 1
+        unsigned int lv1_pointers[256];
+        read_data_block(fs_info, inode.i_block[13], (char *) lv1_pointers, fs_info->block_size);
+
+        // loop nos ponteiros
+        for (int i = 0; i < 256; i++) {
+            if (lv1_pointers[i] == 0) continue;
+
+            // le o segundo bloco de ponteiros
+            // ponteiros de lv 2
+            unsigned int lv2_pointers[256];
+            read_data_block(fs_info, lv1_pointers[i], (char *) lv2_pointers, fs_info->block_size);
+
+            // loop no segundo level de ponteiros, que apontam para dados
+            for (int j = 0; j < 256; j++) {
+                unsigned int block_number = lv2_pointers[j];
+                if (block_number == 0) continue;
+
+                write_data_block_out(fs_info, block_number, block_buffer, total_length, &bytes_read, target_file);
+
+                // seta a variavel para indicar que ja acabou de ler
+                if (bytes_read >= total_length) {
+                    read_done = true;
+                    break;
+                }
+            }
+
+            // se terminou de ler sai do for de cima
+            if (read_done) break;
+        }
+    }
+    fclose(target_file);
+    return EXIT_SUCCESS;
+}
+
+void mv(ext2_info *fs_info, char *source_path, char *target_path) {
+    // cp ja faz o trabalho de copiar o arquivo para fora
+    int result = cp(fs_info, source_path, target_path);
+
+
+    if (result == EXIT_SUCCESS) {
+        rm(fs_info, source_path);
+    }
+}
+
+void rename(ext2_info* fs_info, char* source_name, char* new_name) {
+    char source_path[1024];
+    strcpy(source_path, source_name);
+    unsigned int inode_number = find_inode_number_by_path(fs_info, source_path);
+
+    if (inode_number == 0) {
+        printf("rename: erro '%s' não existe", source_name);
+        return;
+    }
+
+    char new_path_copy[1024];
+    strcpy(new_path_copy, new_name);
+    unsigned int new_name_check = find_inode_number_by_path(fs_info, new_path_copy);
+
+    if (new_name_check != 0) {
+        printf("rename: falhou em renomear para '%s': Arquivo já existe\n", new_name);
+        return;
+    }
+
+    strcpy(source_path, source_name);
+    char filename[1024];
+    unsigned int parent_inode_number = find_parent_inode_and_final_name(fs_info, source_path, filename);
+
+    // remove a entrada anterior
+    if (!remove_dir_entry(fs_info, parent_inode_number, source_name)) {
+        printf("Erro crítico: falha ao remover a entrada de diretório antiga.\n");
+        return;
+    }
+
+    // adiciona a nova entrada, usando o mesmo inode, mas nome diferente.
+    if (!add_dir_entry(fs_info, parent_inode_number, inode_number, new_name, EXT2_FT_REG_FILE, true)) {
+        printf("Erro crítico ao recriar entrada de diretório. O sistema pode estar inconsistente.\n");
+    }
+}
+

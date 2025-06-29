@@ -101,7 +101,7 @@ typedef struct __attribute__((packed)) {
     uint16_t rec_len;
     uint8_t name_len;
     uint8_t file_type;
-    char name[255];
+    char  name[255];
 } dir_entry;
 
 typedef struct {
