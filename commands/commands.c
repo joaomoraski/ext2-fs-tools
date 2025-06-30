@@ -47,7 +47,15 @@ void ls(ext2_info fs_info, char* path) {
     if (path != NULL) {
         char tmp_path[1024];
         strcpy(tmp_path, path);
-        inode = read_inode_by_number(&fs_info, find_inode_number_by_path(&fs_info, tmp_path));
+        unsigned int inode_number = find_inode_number_by_path(&fs_info, tmp_path);
+
+        if (inode_number == 0) {
+            printf("ls: falha ao encontrar o diretorio '%s'\n", path);
+            return;
+        }
+
+        inode = read_inode_by_number(&fs_info, inode_number);
+
         if (!is_dir(inode.i_mode)) {
             printf("%s\n", path);
             return;
@@ -239,10 +247,9 @@ void cd(ext2_info* fs_info, char* path) {
     strcpy(path_copy, path);
     unsigned int inode_number = find_inode_number_by_path(fs_info, path_copy);
 
-
     if (inode_number == 0) {
         // Não achou o diretorio, voltou com o erro
-        // Erro ja foi printado
+        printf("cd: o diretorio '%s': não foi encontrado.\n", path);
         return;
     }
 
@@ -267,7 +274,11 @@ void attr(ext2_info* fs_info, char* path) {
     strcpy(path_copy, path);
     unsigned int inode_number = find_inode_number_by_path(fs_info, path);
 
-    if (inode_number == 0) { return; }
+    if (inode_number == 0) {
+        // Não achou o diretorio, voltou com o erro
+        printf("attr: o arquivo '%s': não foi encontrado.\n", path);
+        return;
+    }
 
     inode_struct inode = read_inode_by_number(fs_info, inode_number);
     char permissions_string[100];
@@ -284,7 +295,9 @@ void cat(ext2_info* fs_info, char* path) {
     unsigned int inode_number = find_inode_number_by_path(fs_info, path);
 
     if (inode_number == 0) {
-        printf("file not found!\n");
+        // Não achou o diretorio, voltou com o erro
+        printf("cat: o arquivo '%s': não foi encontrado.\n", path);
+        return;
     }
 
     inode_struct inode = read_inode_by_number(fs_info, inode_number);
@@ -438,19 +451,19 @@ void touch(ext2_info* fs_info, char* path_to_file) {
     char file_name[256];
     unsigned int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_copy, file_name);
     if (parent_inode_number == 0) {
-        printf("Diretorio não encontrado!"); // todo pegar o padrao do linux
+        printf("touch: diretorio pai não encontrado!\n"); // todo pegar o padrao do linux
         return;
     }
 
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_number);
     if (!is_dir(parent_inode.i_mode)) {
-        printf("nao é diretorio"); // todo pegar o padrao do linux
+        printf("touch: parte do caminho não é um diretorio\n"); // todo pegar o padrao do linux
         return;
     }
 
     // percorrer o data block verificando se o arquivo existe
     if (verify_file_exists(fs_info, parent_inode.i_block[0], file_name)) {
-        printf("file already exists\n"); // todo pegar o padrao do linux
+        printf("touch: arquivo '%s' já existe\n", file_name); // todo pegar o padrao do linux
         return;
     }
 
@@ -493,13 +506,13 @@ void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
 
     unsigned int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_to_file, new_dir_name);
     if (parent_inode_number == 0) {
-        // find_parent_inode... já deve ter avisado que o caminho pai não existe.
+        printf("mkdir: erro, diretorio pai não existe\n");
         return;
     }
 
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_number);
     if (!is_dir(parent_inode.i_mode)) {
-        printf("mkdir: parte do caminho não é diretorio");
+        printf("mkdir: parte do caminho não é diretorio\n");
         return;
     }
 
@@ -549,7 +562,6 @@ void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
         EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR | // dono rwx
         EXT2_S_IRGRP | EXT2_S_IXGRP | // grupo r-x
         EXT2_S_IROTH | EXT2_S_IXOTH;; // outros r-x | fim => drw-r--r--
-
     new_inode.i_size = fs_info->block_size; // ocupa 1 bloco
     new_inode.i_block[0] = new_data_block_num;
     new_inode.i_links_count = 2; // começa com 2 por conta do . e ..
@@ -564,6 +576,7 @@ void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
     char block_buffer[fs_info->block_size];
     memset(block_buffer, 0, fs_info->block_size);
 
+    // cria as entradas de diretorio . e .. no buffer do diretorio
     dir_entry* self_entry = (dir_entry*)block_buffer;
     self_entry->inode = new_dir_inode_num;
     self_entry->name_len = 1;
@@ -599,12 +612,20 @@ void rm(ext2_info* fs_info, char* path) {
     int target_inode_number = find_inode_number_by_path(fs_info, path_copy);
 
     if (target_inode_number == 0) {
-        // printf("rm: arquivo não existe");
+        // Não achou o diretorio, voltou com o erro
+        printf("rm: o arquivo '%s': não foi encontrado.\n", path);
         return;
     }
 
     strcpy(path_copy, path);
     int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_copy, filename);
+
+    // esse erro não seria tao necessário já que o find_inode_number_by_path já retornaria erro, mas achei melhor tratar
+    if (parent_inode_number == 0) {
+        // não achou o diretorio, voltou com o erro
+        printf("rm: o diretorio pai não foi encontrado.\n");
+        return;
+    }
 
     inode_struct target_inode = read_inode_by_number(fs_info, target_inode_number);
     if (is_dir(target_inode.i_mode)) {
@@ -686,12 +707,20 @@ void cmd_rmdir(ext2_info* fs_info, char* path) {
     int target_inode_number = find_inode_number_by_path(fs_info, path_copy);
 
     if (target_inode_number == 0) {
-        // printf("rm: arquivo não existe");
+        // Não achou o diretorio, voltou com o erro
+        printf("rmdir: o diretorio '%s': não foi encontrado.\n", path);
         return;
     }
 
     strcpy(path_copy, path);
     int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_copy, filename);
+
+    // esse erro não seria tao necessário já que o find_inode_number_by_path já retornaria erro, mas achei melhor tratar
+    if (parent_inode_number == 0) {
+        // Não achou o diretorio, voltou com o erro
+        printf("rmdir: o diretorio pai '%s': não foi encontrado.\n", path);
+        return;
+    }
 
     if (strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
         printf("rm: erro \"%s\" não é permitido a remoção deste diretorio\n", path);
@@ -881,7 +910,7 @@ void cmd_rename(ext2_info* fs_info, char* source_name, char* new_name) {
     unsigned int inode_number = find_inode_number_by_path(fs_info, source_path);
 
     if (inode_number == 0) {
-        printf("cmd_rename: erro '%s' não existe", source_name);
+        printf("rename: erro '%s' não existe\n", source_name);
         return;
     }
 
@@ -890,7 +919,7 @@ void cmd_rename(ext2_info* fs_info, char* source_name, char* new_name) {
     unsigned int new_name_check = find_inode_number_by_path(fs_info, new_path_copy);
 
     if (new_name_check != 0) {
-        printf("cmd_rename: falhou em renomear para '%s': Arquivo já existe\n", new_name);
+        printf("rename: falhou em renomear para '%s': Arquivo já existe\n", new_name);
         return;
     }
 
@@ -898,15 +927,21 @@ void cmd_rename(ext2_info* fs_info, char* source_name, char* new_name) {
     char filename[1024];
     unsigned int parent_inode_number = find_parent_inode_and_final_name(fs_info, source_path, filename);
 
+    if (parent_inode_number == 0) {
+        // Não achou o diretorio, voltou com o erro
+        printf("rename: o diretorio pai: não foi encontrado.\n");
+        return;
+    }
+
     // remove a entrada anterior
     if (!remove_dir_entry(fs_info, parent_inode_number, source_name)) {
-        printf("Erro crítico: falha ao remover a entrada de diretório antiga.\n");
+        printf("rename: falha ao remover a entrada de diretório antiga.\n");
         return;
     }
 
     // adiciona a nova entrada, usando o mesmo inode, mas nome diferente.
     if (!add_dir_entry(fs_info, parent_inode_number, inode_number, new_name, EXT2_FT_REG_FILE, true)) {
-        printf("Erro crítico ao recriar entrada de diretório. O sistema pode estar inconsistente.\n");
+        printf("rename: erro ao recriar entrada de diretório. O sistema pode estar inconsistente.\n");
     }
 }
 

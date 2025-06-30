@@ -181,6 +181,12 @@ int main() {
             } else {
                 printf("mv: falta operando.\n");
             }
+        } else if (strcmp(args[0], "rename") == 0) {
+            if (args[2] != NULL) {
+                cmd_rename(&fs_info, args[1], args[2]);
+            } else {
+                printf("rename: falta operando.\n");
+            }
         } else {
             printf("command not found: %s\n", args[0]);
         }

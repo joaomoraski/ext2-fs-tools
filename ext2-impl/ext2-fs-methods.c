@@ -291,10 +291,7 @@ unsigned int find_inode_number_by_path(ext2_info* fs_info, char* path) {
         }
 
         // se não achou o inode no loop
-        if (next_inode == 0) {
-            printf("Erro: '%s' não encontrado.\n", splited_path);
-            return 0;
-        }
+        if (next_inode == 0) return 0;
 
         // vai trocando o inode a ser buscado
         start_inode = next_inode;
