@@ -11,8 +11,8 @@
 #include "../ext2-impl/ext2-fs-methods.h"
 #include "../ext2-impl/ext2_structs.h"
 
-void print_data_block(ext2_info *fs_info, unsigned int block_number, char *block_buffer, long *total_length,
-                      long *bytes_read);
+void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
+                      long* bytes_read);
 
 void info(ext2_info fs_info) {
     super_block super_block = fs_info.sb;
@@ -28,9 +28,9 @@ void info(ext2_info fs_info) {
            "Groups size.....: %u blocks\n"
            "Groups inodes...: %u inodes\n"
            "Inodetable size.: %u blocks\n",
-           (char *) super_block.s_volume_name, // funciona sem o cast, mas quis tirar highlight da IDE
+           (char*)super_block.s_volume_name, // funciona sem o cast, mas quis tirar highlight da IDE
            super_block.s_blocks_count * block_size,
-           super_block.s_free_blocks_count * block_size / 1024,
+           (super_block.s_free_blocks_count - super_block.s_r_blocks_count) * block_size / 1024,
            super_block.s_free_inodes_count,
            super_block.s_free_blocks_count,
            block_size,
@@ -42,17 +42,29 @@ void info(ext2_info fs_info) {
     );
 }
 
-void ls(ext2_info fs_info) {
-    inode_struct inode = read_inode_by_number(&fs_info, fs_info.current_dir_inode);
+void ls(ext2_info fs_info, char* path) {
+    inode_struct inode;
+    if (path != NULL) {
+        char tmp_path[1024];
+        strcpy(tmp_path, path);
+        inode = read_inode_by_number(&fs_info, find_inode_number_by_path(&fs_info, tmp_path));
+        if (!is_dir(inode.i_mode)) {
+            printf("%s\n", path);
+            return;
+        }
+    } else {
+        inode = read_inode_by_number(&fs_info, fs_info.current_dir_inode);
+    }
+
 
     char tmp[1024];
     read_data_block(&fs_info, inode.i_block[0], tmp, sizeof(tmp));
 
-    char *actual_pointer = tmp;
+    char* actual_pointer = tmp;
     int bytes_read = 0;
 
     while (bytes_read < BASE_BLOCK) {
-        dir_entry *entry = (dir_entry *) actual_pointer;
+        dir_entry* entry = (dir_entry*)actual_pointer;
 
         if (entry->rec_len == 0) {
             break;
@@ -160,13 +172,13 @@ void print_superblock(ext2_info fs_info) {
            super_block.s_uuid[4], super_block.s_uuid[5], super_block.s_uuid[6], super_block.s_uuid[7],
            super_block.s_uuid[8], super_block.s_uuid[9], super_block.s_uuid[10], super_block.s_uuid[11],
            super_block.s_uuid[12], super_block.s_uuid[13], super_block.s_uuid[14], super_block.s_uuid[15],
-           (char *) super_block.s_volume_name,
-           (char *) super_block.s_last_mounted,
+           (char*)super_block.s_volume_name,
+           (char*)super_block.s_last_mounted,
            super_block.s_algorithm_usage_bitmap,
            super_block.s_prealloc_blocks,
            super_block.s_prealloc_dir_blocks,
            super_block.s_reserved_gdt_blocks,
-           (char *) super_block.s_journal_uuid,
+           (char*)super_block.s_journal_uuid,
            super_block.s_journal_inum,
            super_block.s_journal_dev,
            super_block.s_last_orphan,
@@ -222,7 +234,7 @@ void print_inode(ext2_info fs_info, unsigned int inode_number) {
            "location file fragment: %d\n", inode.i_generation, inode.i_file_acl, inode.i_dir_acl, inode.i_faddr);
 }
 
-void cd(ext2_info *fs_info, char *path) {
+void cd(ext2_info* fs_info, char* path) {
     char path_copy[1024];
     strcpy(path_copy, path);
     unsigned int inode_number = find_inode_number_by_path(fs_info, path_copy);
@@ -250,7 +262,7 @@ void cd(ext2_info *fs_info, char *path) {
     strcpy(fs_info->current_path, new_path);
 }
 
-void attr(ext2_info *fs_info, char *path) {
+void attr(ext2_info* fs_info, char* path) {
     char path_copy[1024];
     strcpy(path_copy, path);
     unsigned int inode_number = find_inode_number_by_path(fs_info, path);
@@ -266,18 +278,18 @@ void attr(ext2_info *fs_info, char *path) {
            "%s\t%hu\t%hu\t%.1f KiB\t%s\n", permissions_string, inode.i_uid, inode.i_gid, inode.i_size / 1024.0, buffer);
 }
 
-void cat(ext2_info *fs_info, char *path) {
+void cat(ext2_info* fs_info, char* path) {
     char path_copy[1024];
     strcpy(path_copy, path);
     unsigned int inode_number = find_inode_number_by_path(fs_info, path);
 
     if (inode_number == 0) {
-        printf("file not found!");
+        printf("file not found!\n");
     }
 
     inode_struct inode = read_inode_by_number(fs_info, inode_number);
     if (is_dir(inode.i_mode)) {
-        printf("cat: '%s': É um diretório", path); // roubei o padrao do linux
+        printf("cat: '%s': É um diretório\n", path); // roubei o padrao do linux
         // TODO colocar esse padrao em todos os logs de erro
         return;
     }
@@ -317,7 +329,7 @@ void cat(ext2_info *fs_info, char *path) {
         // Este bloco contém uma lista de ponteiros para blocos de dados.
         // 256 ponteiros cada pointer tem 4 bytes, 1024/4 = 256
         unsigned int pointers_block[256];
-        read_data_block(fs_info, inode.i_block[12], (char *) pointers_block, fs_info->block_size);
+        read_data_block(fs_info, inode.i_block[12], (char*)pointers_block, fs_info->block_size);
 
         // loop pelos ponteiros lidos
         for (int i = 0; i < 256; i++) {
@@ -341,7 +353,7 @@ void cat(ext2_info *fs_info, char *path) {
     if (!read_done && inode.i_block[13] != 0) {
         // ponteiros level 1
         unsigned int lv1_pointers[256];
-        read_data_block(fs_info, inode.i_block[13], (char *) lv1_pointers, fs_info->block_size);
+        read_data_block(fs_info, inode.i_block[13], (char*)lv1_pointers, fs_info->block_size);
 
         // loop nos ponteiros
         for (int i = 0; i < 256; i++) {
@@ -350,7 +362,7 @@ void cat(ext2_info *fs_info, char *path) {
             // le o segundo bloco de ponteiros
             // ponteiros de lv 2
             unsigned int lv2_pointers[256];
-            read_data_block(fs_info, lv1_pointers[i], (char *) lv2_pointers, fs_info->block_size);
+            read_data_block(fs_info, lv1_pointers[i], (char*)lv2_pointers, fs_info->block_size);
 
             // loop no segundo level de ponteiros, que apontam para dados
             for (int j = 0; j < 256; j++) {
@@ -381,8 +393,8 @@ void cat(ext2_info *fs_info, char *path) {
     fflush(stdout); // garante a impressão total na tela antes de seguir
 }
 
-void write_data_block_out(ext2_info *fs_info, unsigned int block_number, char block_buffer[], long total_length,
-                          long *bytes_read, FILE *target_file) {
+void write_data_block_out(ext2_info* fs_info, unsigned int block_number, char block_buffer[], long total_length,
+                          long* bytes_read, FILE* target_file) {
     // le o data block
     read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
     // evitar copiar lixo de memoria
@@ -397,12 +409,12 @@ void write_data_block_out(ext2_info *fs_info, unsigned int block_number, char bl
     // usar fwrite por que ele imprime os dados brutos(binarios)
     // não para em \0
     fwrite(block_buffer, 1, bytes_to_write, target_file);
-    *bytes_read += *bytes_read;
+    *bytes_read += bytes_to_write;
 }
 
 // função para facilitar a impressão na tela, ja repetida em 3 lugares diferentes
-void print_data_block(ext2_info *fs_info, unsigned int block_number, char *block_buffer, long *total_length,
-                      long *bytes_read) {
+void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
+                      long* bytes_read) {
     // le o data block
     read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
     // evitar printar lixo de memoria
@@ -420,7 +432,7 @@ void print_data_block(ext2_info *fs_info, unsigned int block_number, char *block
     bytes_read += bytes_to_print;
 }
 
-void touch(ext2_info *fs_info, char *path_to_file) {
+void touch(ext2_info* fs_info, char* path_to_file) {
     char path_copy[1024];
     strcpy(path_copy, path_to_file);
     char file_name[256];
@@ -449,7 +461,7 @@ void touch(ext2_info *fs_info, char *path_to_file) {
         return;
     }
 
-    unsigned int new_inode_num = find_and_allocate_item(fs_info, 'i');
+    unsigned int new_inode_num = allocate_item(fs_info, 'i');
     if (new_inode_num == 0) {
         // ocorreu um erro
         // print ja esta dentro da função
@@ -474,7 +486,7 @@ void touch(ext2_info *fs_info, char *path_to_file) {
     add_dir_entry(fs_info, parent_inode_number, new_inode_num, file_name, EXT2_FT_REG_FILE, true);
 }
 
-void cmd_mkdir(ext2_info *fs_info, char *path_to_file) {
+void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
     char path_copy[1024];
     strcpy(path_copy, path_to_file);
     char new_dir_name[256];
@@ -497,33 +509,51 @@ void cmd_mkdir(ext2_info *fs_info, char *path_to_file) {
     }
 
     // verificar se o bloco possui espaço para a alocação de novas coisas
-    bool has_space = add_dir_entry(fs_info, parent_inode_number, 0, new_dir_name, 0, false);
+    bool has_space = add_dir_entry(fs_info, parent_inode_number, 0, new_dir_name,
+        0, false);
     if (!has_space) {
         // print de erro ja esta la dentro
         return;
     }
 
     // cria o inode do diretorio, para indicar para um datablock onde vai ter os dados do diretorio
-    unsigned int new_dir_inode_num = find_and_allocate_item(fs_info, 'i');
+    unsigned int new_dir_inode_num = allocate_item(fs_info, 'i');
     if (new_dir_inode_num == 0) return;
-    unsigned int new_data_block_num = find_and_allocate_item(fs_info, 'b');
+    unsigned int new_data_block_num = allocate_item(fs_info, 'b');
     if (new_data_block_num == 0) {
         deallocate_item(fs_info, new_dir_inode_num, 'i');
         return;
     }
+
+    // pegar o grupo do inode atual
+    // mesma logica do -1 para garantir o arredondamento
+    int group_of_new_inode = (new_dir_inode_num - 1) / fs_info->sb.s_inodes_per_group;
+
+    // incrementar o contador de diretorios daquele grupo
+    fs_info->group_desc_array[group_of_new_inode].bg_used_dirs_count++;
+
+    // pegar a posiçao do group desc na imagem
+    unsigned int group_desc_position = fs_info->block_size * 2 + (group_of_new_inode * sizeof(group_desc));
+    // salva a alteraçao do used_dirs_count
+    point_and_write(fs_info->fd, group_desc_position, SEEK_SET, &fs_info->group_desc_array[group_of_new_inode],
+                    sizeof(group_desc));
+
+    parent_inode.i_links_count++;
+    write_inode_by_number(fs_info, parent_inode_number, &parent_inode);
 
     // seta tudo com 0 inicialmente
     // como é touch, garante que o i_block[0-14] é preenchido com 0
     inode_struct new_inode = {0};
     // as mascaras de permissao foram tiradas da lib do ext2
     new_inode.i_mode = EXT2_S_IFDIR | // d
-                       EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR | // dono rwx
-                       EXT2_S_IRGRP | EXT2_S_IXGRP | // grupo r-x
-                       EXT2_S_IROTH | EXT2_S_IXOTH;; // outros r-x | fim => drw-r--r--
+        EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IXUSR | // dono rwx
+        EXT2_S_IRGRP | EXT2_S_IXGRP | // grupo r-x
+        EXT2_S_IROTH | EXT2_S_IXOTH;; // outros r-x | fim => drw-r--r--
 
     new_inode.i_size = fs_info->block_size; // ocupa 1 bloco
     new_inode.i_block[0] = new_data_block_num;
     new_inode.i_links_count = 2; // começa com 2 por conta do . e ..
+    new_inode.i_blocks = fs_info->block_size / 512; // quantos setores ele ocupa(como 1 diretorio == 1024)
     time_t timestamp = time(NULL);
     new_inode.i_ctime = timestamp;
     new_inode.i_mtime = timestamp;
@@ -534,7 +564,7 @@ void cmd_mkdir(ext2_info *fs_info, char *path_to_file) {
     char block_buffer[fs_info->block_size];
     memset(block_buffer, 0, fs_info->block_size);
 
-    dir_entry *self_entry = (dir_entry *) block_buffer;
+    dir_entry* self_entry = (dir_entry*)block_buffer;
     self_entry->inode = new_dir_inode_num;
     self_entry->name_len = 1;
     self_entry->file_type = EXT2_FT_DIR;
@@ -543,8 +573,8 @@ void cmd_mkdir(ext2_info *fs_info, char *path_to_file) {
     self_entry->rec_len = (8 + self_entry->name_len + 3) & ~3; // 12
 
     // move o ponteiro para dps da primeira entrada
-    char *pointer = block_buffer + self_entry->rec_len;
-    dir_entry *parent_entry = (dir_entry *) pointer;
+    char* pointer = block_buffer + self_entry->rec_len;
+    dir_entry* parent_entry = (dir_entry*)pointer;
     parent_entry->inode = parent_inode_number;
     parent_entry->name_len = 2;
     parent_entry->file_type = EXT2_FT_DIR;
@@ -553,14 +583,16 @@ void cmd_mkdir(ext2_info *fs_info, char *path_to_file) {
     // aloca o tamanho total restante
     parent_entry->rec_len = fs_info->block_size - self_entry->rec_len;
 
-    point_and_write(fs_info->fd, new_data_block_num * fs_info->block_size, SEEK_SET, block_buffer, fs_info->block_size);
+    point_and_write(fs_info->fd, new_data_block_num * fs_info->block_size, SEEK_SET,
+                    block_buffer, fs_info->block_size);
 
     // adiciona o novo diretorio no diretorio pai
-    add_dir_entry(fs_info, parent_inode_number, new_dir_inode_num, new_dir_name, EXT2_FT_DIR, true);
+    add_dir_entry(fs_info, parent_inode_number, new_dir_inode_num, new_dir_name,
+                  EXT2_FT_DIR, true);
 }
 
 
-void rm(ext2_info *fs_info, char *path) {
+void rm(ext2_info* fs_info, char* path) {
     char filename[1024];
     char path_copy[1024];
     strcpy(path_copy, path);
@@ -581,6 +613,16 @@ void rm(ext2_info *fs_info, char *path) {
         return;
     }
 
+    // diminui a contagem de link do proprio arquivo
+    target_inode.i_links_count--;
+    target_inode.i_dtime = time(NULL);
+
+    // escreve esta mudança na memoria
+    write_inode_by_number(fs_info, target_inode_number, &target_inode);
+
+    // remove a entrada do diretorio para deixar o inode orfao
+    remove_dir_entry(fs_info, parent_inode_number, filename);
+
     // apaga os blocos normais
     for (int i = 0; i < 12; ++i) {
         if (target_inode.i_block[i] != 0) {
@@ -594,7 +636,7 @@ void rm(ext2_info *fs_info, char *path) {
     if (target_inode.i_block[12] != 0) {
         // ler os blocos que tem uma lista de ponteiros
         unsigned int pointers_block[256];
-        read_data_block(fs_info, target_inode.i_block[12], (char *) pointers_block, fs_info->block_size);
+        read_data_block(fs_info, target_inode.i_block[12], (char*)pointers_block, fs_info->block_size);
 
         // apagar cada bloco registrado
 
@@ -614,13 +656,13 @@ void rm(ext2_info *fs_info, char *path) {
     if (target_inode.i_block[13] != 0) {
         // ler os blocos de lv 1
         unsigned int lv1_pointers[256];
-        read_data_block(fs_info, target_inode.i_block[13], (char *) lv1_pointers, fs_info->block_size);
+        read_data_block(fs_info, target_inode.i_block[13], (char*)lv1_pointers, fs_info->block_size);
 
         for (int i = 0; i < 256; i++) {
             if (lv1_pointers[i] == 0) continue;
             // percorrer o lv1 lendo o lv2
             unsigned int lv2_pointers[256];
-            read_data_block(fs_info, lv1_pointers[i], (char *) lv2_pointers, fs_info->block_size);
+            read_data_block(fs_info, lv1_pointers[i], (char*)lv2_pointers, fs_info->block_size);
             for (int j = 0; j < 256; j++) {
                 unsigned int block_number = lv2_pointers[j];
                 if (block_number == 0) continue;
@@ -633,13 +675,11 @@ void rm(ext2_info *fs_info, char *path) {
     }
 
     // 14 nao é necessario porque o 13 ja cobre os 64mb
-
     deallocate_item(fs_info, target_inode_number, 'i');
-    remove_dir_entry(fs_info, parent_inode_number, filename);
 }
 
 
-void cmd_rmdir(ext2_info *fs_info, char *path) {
+void cmd_rmdir(ext2_info* fs_info, char* path) {
     char filename[1024];
     char path_copy[1024];
     strcpy(path_copy, path);
@@ -667,11 +707,11 @@ void cmd_rmdir(ext2_info *fs_info, char *path) {
     char tmp[1024];
     read_data_block(fs_info, target_inode.i_block[0], tmp, sizeof(tmp));
 
-    char *actual_pointer = tmp;
+    char* actual_pointer = tmp;
     int bytes_read = 0;
 
     while (bytes_read < BASE_BLOCK) {
-        dir_entry *entry = (dir_entry *) actual_pointer;
+        dir_entry* entry = (dir_entry*)actual_pointer;
 
         if (entry->rec_len == 0) break;
 
@@ -685,22 +725,34 @@ void cmd_rmdir(ext2_info *fs_info, char *path) {
         bytes_read += entry->rec_len;
     }
 
+    // decrementar o contador de links do diretorio do pai
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_number);
+
     parent_inode.i_links_count--;
+    target_inode.i_links_count = 0;
+    target_inode.i_dtime = time(NULL);
+
+    int group_to_update = (target_inode_number - 1) / fs_info->sb.s_inodes_per_group;
+    fs_info->group_desc_array[group_to_update].bg_used_dirs_count--;
     write_inode_by_number(fs_info, parent_inode_number, &parent_inode);
+    write_inode_by_number(fs_info, target_inode_number, &target_inode);
+    unsigned int group_desc_position = fs_info->block_size * 2 + (group_to_update * sizeof(group_desc));
+    point_and_write(fs_info->fd, group_desc_position, SEEK_SET, &fs_info->group_desc_array[group_to_update],
+                    sizeof(group_desc));
+
+    // remover o dir_entry do diretorio
+    remove_dir_entry(fs_info, parent_inode_number, filename);
 
     // desalocar o bloco 0(especificaçao diz que o diretorio ocupa apenas 1 bloco)
     deallocate_item(fs_info, target_inode.i_block[0], 'b');
     // desalocaçao do inode do diretorio
     deallocate_item(fs_info, target_inode_number, 'i');
-    // remover o dir_entry do diretorio
-    remove_dir_entry(fs_info, parent_inode_number, filename);
 }
 
-int cp(ext2_info *fs_info, char *source_path, char *target_path) {
+int cp(ext2_info* fs_info, char* source_path, char* target_path) {
     // write binary para ser mais facil a transição de dados
     printf("%s\n", target_path);
-    FILE *target_file = fopen(target_path, "wb");
+    FILE* target_file = fopen(target_path, "wb");
     if (target_file == NULL) {
         printf("cp: erro na abertura do arquivo no sistema\n");
         return EXIT_FAILURE;
@@ -756,7 +808,7 @@ int cp(ext2_info *fs_info, char *source_path, char *target_path) {
         // Este bloco contém uma lista de ponteiros para blocos de dados.
         // 256 ponteiros cada pointer tem 4 bytes, 1024/4 = 256
         unsigned int pointers_block[256];
-        read_data_block(fs_info, inode.i_block[12], (char *) pointers_block, fs_info->block_size);
+        read_data_block(fs_info, inode.i_block[12], (char*)pointers_block, fs_info->block_size);
 
         // loop pelos ponteiros lidos
         for (int i = 0; i < 256; i++) {
@@ -780,7 +832,7 @@ int cp(ext2_info *fs_info, char *source_path, char *target_path) {
     if (!read_done && inode.i_block[13] != 0) {
         // ponteiros level 1
         unsigned int lv1_pointers[256];
-        read_data_block(fs_info, inode.i_block[13], (char *) lv1_pointers, fs_info->block_size);
+        read_data_block(fs_info, inode.i_block[13], (char*)lv1_pointers, fs_info->block_size);
 
         // loop nos ponteiros
         for (int i = 0; i < 256; i++) {
@@ -789,7 +841,7 @@ int cp(ext2_info *fs_info, char *source_path, char *target_path) {
             // le o segundo bloco de ponteiros
             // ponteiros de lv 2
             unsigned int lv2_pointers[256];
-            read_data_block(fs_info, lv1_pointers[i], (char *) lv2_pointers, fs_info->block_size);
+            read_data_block(fs_info, lv1_pointers[i], (char*)lv2_pointers, fs_info->block_size);
 
             // loop no segundo level de ponteiros, que apontam para dados
             for (int j = 0; j < 256; j++) {
@@ -813,7 +865,7 @@ int cp(ext2_info *fs_info, char *source_path, char *target_path) {
     return EXIT_SUCCESS;
 }
 
-void mv(ext2_info *fs_info, char *source_path, char *target_path) {
+void mv(ext2_info* fs_info, char* source_path, char* target_path) {
     // cp ja faz o trabalho de copiar o arquivo para fora
     int result = cp(fs_info, source_path, target_path);
 
@@ -823,13 +875,13 @@ void mv(ext2_info *fs_info, char *source_path, char *target_path) {
     }
 }
 
-void rename(ext2_info* fs_info, char* source_name, char* new_name) {
+void cmd_rename(ext2_info* fs_info, char* source_name, char* new_name) {
     char source_path[1024];
     strcpy(source_path, source_name);
     unsigned int inode_number = find_inode_number_by_path(fs_info, source_path);
 
     if (inode_number == 0) {
-        printf("rename: erro '%s' não existe", source_name);
+        printf("cmd_rename: erro '%s' não existe", source_name);
         return;
     }
 
@@ -838,7 +890,7 @@ void rename(ext2_info* fs_info, char* source_name, char* new_name) {
     unsigned int new_name_check = find_inode_number_by_path(fs_info, new_path_copy);
 
     if (new_name_check != 0) {
-        printf("rename: falhou em renomear para '%s': Arquivo já existe\n", new_name);
+        printf("cmd_rename: falhou em renomear para '%s': Arquivo já existe\n", new_name);
         return;
     }
 
@@ -858,3 +910,26 @@ void rename(ext2_info* fs_info, char* source_name, char* new_name) {
     }
 }
 
+void multi_touch(ext2_info* fs_info, char** args, int argc) {
+    for (int i = 1; i < argc; ++i) {
+        touch(fs_info, args[i]);
+    }
+}
+
+void multi_cmd_mkdir(ext2_info* fs_info, char** args, int argc) {
+    for (int i = 1; i < argc; ++i) {
+        cmd_mkdir(fs_info, args[i]);
+    }
+}
+
+void multi_rm(ext2_info* fs_info, char** args, int argc) {
+    for (int i = 1; i < argc; ++i) {
+        rm(fs_info, args[i]);
+    }
+}
+
+void multi_cmd_rmdir(ext2_info* fs_info, char** args, int argc) {
+    for (int i = 1; i < argc; ++i) {
+        cmd_rmdir(fs_info, args[i]);
+    }
+}

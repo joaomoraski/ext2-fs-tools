@@ -16,7 +16,7 @@ run: all
 	./$(TARGET)
 
 clean:
-	rm -f $(TARGET)
+	rm -f $(TARGET) .ext2_shell_history
 
 image:
 	rm $(IMAGE_NAME)
@@ -30,7 +30,7 @@ generate-ext2:
 	mkfs.ext2 -L "Volume do mouras" -b 1024 ./myext2.iso
 
 verify-ext2:
-	e2fsck ${IMAGE_NAME}
+	e2fsck -nvf ${IMAGE_NAME}
 
 mount:
 	sudo mount ${IMAGE_NAME} /mnt/ext2-project

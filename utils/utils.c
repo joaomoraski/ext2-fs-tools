@@ -122,3 +122,54 @@ void point_and_write(int fd, long offset, int whence, const void* buffer, size_t
     lseek(fd, offset, whence);
     write(fd, buffer, bytes_to_write);
 }
+
+// faz o parse do input para considerar se o argumento esta entre aspas
+int parse_input(char* input, char** args) {
+    int argc = 0;
+    char* arg_start = NULL; // ponteiro do inicio do argumento
+    bool in_quotes = false; // flag para controlar se esta dentro de aspas
+    int len = strlen(input); // pega o tamanho da string do input
+
+    // verificar caracter por caracter da string
+    for (int i = 0; i < len; i++) {
+
+        char char_atual = input[i]; // pega o caracter atual
+
+        if (char_atual == '\"') {
+            input[i] = '\0'; // aspa vira o fim da string
+            // se tava nao ta mais, se nao tava agr ta
+            in_quotes = !in_quotes; // inverte a condicional
+
+            if (in_quotes) { // se entrou nas aspas
+                // passa o argumento da posição de memoria
+                arg_start = &input[i + 1]; // indica que o argumento começa no proximo caracter.
+            } else { // se saiu das aspas ou não estava nas aspas
+                args[argc++] = arg_start; // guarda o argumento
+                arg_start = NULL; // Reseta o marcador de início.
+            }
+
+        } else if (char_atual == ' ' && !in_quotes) { // se é um espaço e não estamos nas aspas
+            input[i] = '\0'; // também o fim do argumento
+            // terminou de ler o argumento passado
+            if (arg_start != NULL) { // se ja tinha algum argumento pra ler
+                // como setamos \0 no input ao fim do argumento
+                // outros comandos do C vao procurar pelo endereço na memoria e parar no \0
+                args[argc++] = arg_start; // guarda ele
+                arg_start = NULL; // reseta
+            }
+        } else { // caracter normal
+            if (arg_start == NULL) { // se não tiver o inicio de um algumento ainda
+                arg_start = &input[i]; // indica que o inicio é aq
+            }
+        }
+    }
+
+    // Depois que o loop acaba, pode ter sobrado um último argumento
+    if (arg_start != NULL) {
+        args[argc++] = arg_start;
+    }
+
+    // Finaliza o array de argumentos com NULL, como é o padrão.
+    args[argc] = NULL;
+    return argc;
+}

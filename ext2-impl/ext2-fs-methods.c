@@ -8,27 +8,42 @@
 
 #include "../utils/utils.h"
 
+// carrega as informações do superbloco
 void load_super_block(ext2_info* fs_info) {
+    // inicializa a struct do super_block
     super_block super_block;
 
+    // se movimenta ate o offset do base_block e le o conteudo para a struct do super_block
     lseek(fs_info->fd, BASE_BLOCK, SEEK_SET);
     read(fs_info->fd, &super_block, sizeof(super_block));
 
+    // verificação para se é ou não ext2 filesystem
     if (super_block.s_magic != EXT2_SUPER_MAGIC) {
-        fprintf(stderr, "Not an ext2fs filesystem\n");
+        fprintf(stderr, "Not an ext2 filesystem\n");
         exit(EXIT_FAILURE);
     }
 
+    // preenche o superblock da struct principal do sistema
     fs_info->sb = super_block;
+    // shift bit a bit para calcular o tamanho do bloco
+    // define o valor baseado no valor logaritmo cadastrado no superbloco
+    // igual definido na doc
+    //      https://www.nongnu.org/ext2-doc/ext2.html#s-log-block-size
     fs_info->block_size = 1024 << super_block.s_log_block_size;
 }
 
+// carrega as informações dos descritores de grupo
 void load_group_desc(ext2_info* fs_info) {
+    // cria o aux de numeros de bloco e blocos por grupo, -1 para melhorar na divisao abaixo
+    // C sempre arredonda pra baixo, podendo causar inconsistencia
     unsigned int aux = fs_info->sb.s_blocks_count + fs_info->sb.s_blocks_per_group - 1;
-    fs_info->num_block_groups = aux / fs_info->sb.s_blocks_per_group; // aux foi feito so pra ficar mais facil de ler
+    // aux foi feito so pra ficar mais facil de ler
+    // calcula o numero de descritores de grupos
+    fs_info->num_block_groups = aux / fs_info->sb.s_blocks_per_group;
 
     // alocar a memoria para os descritores de grupo
     fs_info->group_desc_array = (group_desc*)malloc(fs_info->num_block_groups * sizeof(group_desc));
+    // indicar que deu ruim
     if (fs_info->group_desc_array == NULL) {
         perror("Failed to allocate memory for group descriptors");
         close(fs_info->fd);
@@ -40,6 +55,7 @@ void load_group_desc(ext2_info* fs_info) {
     off_t group_desc_table_offset = fs_info->block_size * 2;
     lseek(fs_info->fd, group_desc_table_offset, SEEK_SET);
     read(fs_info->fd, fs_info->group_desc_array, fs_info->num_block_groups * sizeof(group_desc));
+    // le diretamenente no array de group desc as informacoes de n grupos
 
     // definir diretorio raiz
     fs_info->current_dir_inode = 2; // inode 2 é sempre o diretório raiz
@@ -47,39 +63,62 @@ void load_group_desc(ext2_info* fs_info) {
 }
 
 inode_struct read_inode_by_number(ext2_info* fs_info, unsigned int inode_number) {
+    // divide o numero do inode pelo numero de inodes por grupo para saber me qual grupo esta
     int group = (inode_number - 1) / fs_info->sb.s_inodes_per_group;
+    // pega o descritor do grupo que o inode esta
     group_desc group_desc = fs_info->group_desc_array[group];
+    // faz o calculo com % para saber qual a posição do inode dentro do grupo
     int inode_index_on_group = (inode_number - 1) % fs_info->sb.s_inodes_per_group;
+    // pega o inicio da tabela de inodes do descritor de grupo
     int initial_position_inode_table = group_desc.bg_inode_table * fs_info->block_size;
+    // pega a posiçao atual do inode informado
     int final_position_of_inode = initial_position_inode_table + (inode_index_on_group * fs_info->sb.s_inode_size);
 
+    // monta a struct do inode
     inode_struct inode;
+    // anda ate a posiçao atual no arquivo
     lseek(fs_info->fd, final_position_of_inode, SEEK_SET);
+    // le o inode atual para struct
     read(fs_info->fd, &inode, sizeof(inode_struct));
+    // retorna o inode
     return inode;
 }
 
+// funcao auxiliar para evitar repetiçao de codigo
 void write_inode_by_number(ext2_info* fs_info, unsigned int inode_number, inode_struct* new_inode) {
+    // divide o numero do inode pelo numero de inodes por grupo para saber me qual grupo esta
     int group = (inode_number - 1) / fs_info->sb.s_inodes_per_group;
+    // pega o descritor do grupo que o inode esta
     group_desc group_desc = fs_info->group_desc_array[group];
+    // faz o calculo com % para saber qual a posição do inode dentro do grupo
     int inode_index_on_group = (inode_number - 1) % fs_info->sb.s_inodes_per_group;
+    // pega o inicio da tabela de inodes do descritor de grupo
     int initial_position_inode_table = group_desc.bg_inode_table * fs_info->block_size;
+    // pega a posiçao atual do inode informado
     int final_position_of_inode = initial_position_inode_table + (inode_index_on_group * fs_info->sb.s_inode_size);
 
+    // anda ate a posiçao atual no arquivo
     lseek(fs_info->fd, final_position_of_inode, SEEK_SET);
+    // salva o novo inode na memoria
     write(fs_info->fd, new_inode, sizeof(inode_struct));
 }
 
-
+// adiciona uma nova dir entry no datablock do inode "pai"
+// tem a variavel commit_changes para ter um dry-run, usado para verificar se tem tamanho para adicionar
 int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned int new_inode_num, char* filename,
                   int file_type, bool commit_changes) { // vlw magalu pelo commit_changes
+    // le o inode "pai" pelo numero passado
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_num);
 
+    // le o data block do inode
     char block_buffer[fs_info->block_size];
     read_data_block(fs_info, parent_inode.i_block[0], block_buffer, sizeof(block_buffer));
 
+    // calcula o tamanho da entrada necessario
+    // 8 sendo o fixo da struct + o tamanho do nome e o arredondamento para multiplo de 4
     int required_size_for_new_entry = (8 + strlen(filename) + 3) & ~3;
 
+    // coloca o ponteiro para a posiçao inicial do block_buffer
     char* pointer = block_buffer;
     int bytes_read = 0;
 
@@ -133,6 +172,7 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
         // caso o rec_len desta entrada nos leva exatamente até o final do bloco,
         // então ele é a última entrada.
         bytes_read += current_entry->rec_len;
+        // mexe o ponteiro para frente
         pointer += current_entry->rec_len;
     }
 
@@ -143,34 +183,37 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
 }
 
 
+// remove uma dir entry no datablock do inode "pai"
 int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* filename_to_remove) {
+    // carrega o inode pelo numero informado
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_num);
 
+    // carrega o data block para o buffer
     char block_buffer[fs_info->block_size];
     read_data_block(fs_info, parent_inode.i_block[0], block_buffer, sizeof(block_buffer));
 
+    // passa a posiçao que veio do buffer para o pointer
     char* pointer = block_buffer;
     int bytes_read = 0;
+    // cria as variaveis de entry atual e anterior
     dir_entry* current_entry = NULL;
     dir_entry* previous_entry = NULL;
 
+    // loop ate que os bytes sejam maiores que o tamanho do bloco
     while (bytes_read < fs_info->block_size) {
+        // monta o dir_entry usando o ponteiro
         current_entry = (dir_entry*)pointer;
 
+        // se tiver reclen == 0 é pq tem algo errado
         if (current_entry->rec_len == 0) break;
 
+        // se tiver inode e o nome do arquivo for igual a da entry e o tamanho também
         if (current_entry->inode != 0 &&
             strncmp(filename_to_remove, current_entry->name, current_entry->name_len) == 0 &&
             strlen(filename_to_remove) == current_entry->name_len) {
-            // primeira entrada que olhamos ja é a que é para ser removida
-            if (previous_entry == NULL) {
-                // Caso especial, remover a primeira entrada
-                // n tem entrada anterior para esticar
-                current_entry->inode = 0;
-            } else {
-                // esticar o rec_len baseado na anterior
-                previous_entry->rec_len += current_entry->rec_len;
-            }
+            // esticar o rec_len da entrada anterior
+            current_entry->inode = 0;
+            previous_entry->rec_len += current_entry->rec_len;
 
             point_and_write(fs_info->fd, parent_inode.i_block[0] * fs_info->block_size, SEEK_SET,
                             block_buffer, fs_info->block_size);
@@ -192,19 +235,26 @@ int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* fi
     return 0;
 }
 
+// acha o numero do inode pelo caminho informado
 unsigned int find_inode_number_by_path(ext2_info* fs_info, char* path) {
+    // variavel para controlar o inode inicial
     unsigned int start_inode;
 
+    // se começar com / entao é o 2(inode raiz)
     if (path[0] == '/') { // Caminho absoluto
         start_inode = 2;
-    } else {
+    } else { // se não começa com o inode cadastrado como o atual
         start_inode = fs_info->current_dir_inode;
     }
+    // começa a splitar o path
     char* splited_path = strtok(path, "/");
 
+    // enquanto não for nulo(acabar as /)
     while (splited_path != NULL) {
+        // le o inode pelo numero que esta no start
         inode_struct inode = read_inode_by_number(fs_info, start_inode);
 
+        // verifica se é ou não diretorio (podem tentar trollar, colocar um arquivo no path)
         if (!is_dir(inode.i_mode)) { // não é um diretorio.
             printf("Erro: '%s' não é um diretório no caminho.\n", "componente_anterior"); // Melhorar isso depois
             return 0;
@@ -214,11 +264,14 @@ unsigned int find_inode_number_by_path(ext2_info* fs_info, char* path) {
         char tmp[1024];
         read_data_block(fs_info, inode.i_block[0], tmp, sizeof(tmp));
 
+        // faz o loop pelo diretorio
         char* actual_pointer = tmp;
         int bytes_read = 0;
         unsigned int next_inode = 0;
 
+        // ler ate o bytes passar do tamanho do bloco
         while (bytes_read < fs_info->block_size) {
+            // pega o dir_entry atual
             dir_entry* entry = (dir_entry*)actual_pointer;
 
             // se o tamanho do diretorio é 0 tem algo errado
@@ -237,19 +290,21 @@ unsigned int find_inode_number_by_path(ext2_info* fs_info, char* path) {
             bytes_read += entry->rec_len;
         }
 
+        // se não achou o inode no loop
         if (next_inode == 0) {
             printf("Erro: '%s' não encontrado.\n", splited_path);
             return 0;
         }
 
+        // vai trocando o inode a ser buscado
         start_inode = next_inode;
 
+        // continua o split do path
         splited_path = strtok(NULL, "/");
     }
     return start_inode;
 }
 
-// todo questionar isso aq
 unsigned int find_parent_inode_and_final_name(ext2_info* fs_info, const char* full_path, char* final_name_out) {
     char path_copy[1024];
     strcpy(path_copy, full_path);
@@ -280,12 +335,13 @@ unsigned int find_parent_inode_and_final_name(ext2_info* fs_info, const char* fu
 
 
 void read_data_block(ext2_info* fs_info, int block_number, char* buffer, int buffer_size) {
+    // endereço do conteudo
     int content_location = block_number * fs_info->block_size;
     lseek(fs_info->fd, content_location, SEEK_SET);
     read(fs_info->fd, buffer, buffer_size);
 }
 
-unsigned int find_and_allocate_item(ext2_info* fs_info, char type) {
+unsigned int allocate_item(ext2_info* fs_info, char type) {
     // loop para cada grupo no sistema de arquivos
     for (int i = 0; i < fs_info->num_block_groups; ++i) {
         // bitmap esta dentro do descritor de grupo
@@ -394,7 +450,7 @@ void deallocate_item(ext2_info* fs_info, unsigned int item_number, char type) {
 
     // salvar o bitmap modificado no disco
 
-    point_and_write(fs_info->fd, bitmap_block_num * fs_info->block_size, SEEK_SET, // lseef
+    point_and_write(fs_info->fd, bitmap_block_num * fs_info->block_size, SEEK_SET, // lseek
                     bitmap_buffer, fs_info->block_size); // write
 
     // atualzar e salvar na memoria os contadores
@@ -433,7 +489,9 @@ bool verify_file_exists(ext2_info* fs_info, unsigned int i_block, char* file_nam
 
         // 0 significa excluido ou vazio
         if (entry->inode != 0) {
-            if (strcmp(entry->name, file_name) == 0) return true;
+            if (strncmp(file_name, entry->name, entry->name_len) == 0 && strlen(file_name) == entry->name_len) {
+                return true;
+            }
         }
         actual_pointer += entry->rec_len;
         bytes_read += entry->rec_len;

@@ -17,9 +17,9 @@ typedef struct __attribute__((packed)) {
     unsigned int s_free_inodes_count;
     unsigned int s_first_data_block;
     unsigned int s_log_block_size;
-    unsigned int s_log_frag_size; //s_log_cluster_size frag_size
+    unsigned int s_log_frag_size;
     unsigned int s_blocks_per_group;
-    unsigned int s_frag_per_group; //s_clusters_per_group frag
+    unsigned int s_frag_per_group;
     unsigned int s_inodes_per_group;
     unsigned int s_mtime;
     unsigned int s_wtime;
@@ -90,7 +90,7 @@ typedef struct __attribute__((packed)) {
     uint32_t i_osd1;
     uint32_t i_block[15];
     uint32_t i_generation; // file version for nfs
-    uint32_t i_file_acl; //
+    uint32_t i_file_acl;
     uint32_t i_dir_acl;
     uint32_t i_faddr;
     uint8_t i_osd2[12];
@@ -107,8 +107,8 @@ typedef struct __attribute__((packed)) {
 typedef struct {
     super_block sb;
     group_desc* group_desc_array;
-    unsigned int block_size; // Tamanho do bloco em bytes (já calculado de s_log_block_size)
-    unsigned int num_block_groups; // Número total de grupos de blocos (calculado do sb)
+    unsigned int block_size; // tamanho do bloco em bytes (já calculado de s_log_block_size)
+    unsigned int num_block_groups; // número total de grupos de blocos (calculado do sb)
     unsigned int current_dir_inode; // Inode do diretório corrente (para cd, ls, pwd)
     char current_path[256];
     int fd;
