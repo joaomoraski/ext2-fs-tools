@@ -13,7 +13,7 @@
 
 void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
                       long* bytes_read);
-
+// comando de info
 void info(ext2_info fs_info) {
     super_block super_block = fs_info.sb;
     unsigned int block_size = fs_info.block_size;
@@ -44,9 +44,11 @@ void info(ext2_info fs_info) {
 
 void ls(ext2_info fs_info, char* path) {
     inode_struct inode;
+    // verificação se o ls passa um caminho ou não
     if (path != NULL) {
         char tmp_path[1024];
         strcpy(tmp_path, path);
+        // acha o inode pelo path informado
         unsigned int inode_number = find_inode_number_by_path(&fs_info, tmp_path);
 
         if (inode_number == 0) {
@@ -54,17 +56,22 @@ void ls(ext2_info fs_info, char* path) {
             return;
         }
 
+        // dps de pegar o inode_number, pega o inode desse numero
         inode = read_inode_by_number(&fs_info, inode_number);
 
+        // se não for diretorio(tentou listar um arquivo) ele so printa o arquivo(testado no linux)
         if (!is_dir(inode.i_mode)) {
             printf("%s\n", path);
             return;
         }
     } else {
+        // se n tem path, so carrega pelo inode do diretorio atual
         inode = read_inode_by_number(&fs_info, fs_info.current_dir_inode);
     }
 
 
+    // le o datablock do indicado pelo inode
+    // diretorios so tem 1 bloco
     char tmp[1024];
     read_data_block(&fs_info, inode.i_block[0], tmp, sizeof(tmp));
 
@@ -72,14 +79,15 @@ void ls(ext2_info fs_info, char* path) {
     int bytes_read = 0;
 
     while (bytes_read < BASE_BLOCK) {
+        // pega o ponteiro atual e passa para ser o inicio do entry
         dir_entry* entry = (dir_entry*)actual_pointer;
 
-        if (entry->rec_len == 0) {
-            break;
-        }
+        // se rec_len == 0 então algo esta errado
+        if (entry->rec_len == 0) break;
 
         // 0 significa excluido ou vazio
         if (entry->inode != 0) {
+            // cria o name pelo tamanho do nome da entry
             char name[entry->name_len];
             memcpy(name, entry->name, entry->name_len);
             name[entry->name_len] = '\0';
@@ -95,6 +103,7 @@ void ls(ext2_info fs_info, char* path) {
     }
 }
 
+// print superblock, usado para depuração
 void print_superblock(ext2_info fs_info) {
     super_block super_block = fs_info.sb;
     char lastcheck[50];
@@ -203,6 +212,8 @@ void print_superblock(ext2_info fs_info) {
            super_block.s_first_meta_bg);
 }
 
+
+// print groups, usado para depuração
 void print_groups(ext2_info fs_info) {
     for (int i = 0; i < fs_info.num_block_groups; ++i) {
         group_desc group_desc = fs_info.group_desc_array[i];
@@ -218,6 +229,7 @@ void print_groups(ext2_info fs_info) {
     }
 }
 
+// print inode, usado para depuração
 void print_inode(ext2_info fs_info, unsigned int inode_number) {
     inode_struct inode = read_inode_by_number(&fs_info, inode_number);
     printf("file format and access rights: 0x%x\n"

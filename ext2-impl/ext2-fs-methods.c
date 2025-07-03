@@ -419,38 +419,44 @@ unsigned int allocate_item(ext2_info* fs_info, char type) {
 }
 
 void deallocate_item(ext2_info* fs_info, unsigned int item_number, char type) {
+    // variavel de controle de itens por grupo
     unsigned int items_per_group;
+    // pega o tipo e preenche a variavel com o valor especifico
     if (type == 'i') {
         items_per_group = fs_info->sb.s_inodes_per_group;
     } else {
         items_per_group = fs_info->sb.s_blocks_per_group;
     }
 
+    // todo especificar isso melhor
     unsigned int group_index = (item_number - 1) / items_per_group;
     unsigned int local_index = (item_number - 1) % items_per_group;
     unsigned int byte_index = local_index / 8;
     unsigned int bit_index = local_index % 8;
 
+    // variavel para armazenar o bitmap
     unsigned int bitmap_block_num;
+    // pega o bitmap baseado no index de grupo e no tipo
     if (type == 'i') {
         bitmap_block_num = fs_info->group_desc_array[group_index].bg_inode_bitmap;
     } else {
         bitmap_block_num = fs_info->group_desc_array[group_index].bg_block_bitmap;
     }
 
+    // le o bitmap para o buffer
     char bitmap_buffer[fs_info->block_size];
     read_data_block(fs_info, bitmap_block_num, bitmap_buffer, sizeof(bitmap_buffer));
 
     // setar o bit como 0 (livre)
     // operaçao inversa do que foi feito la em cima |=
+    // na posiçao do byte especifico no bitmap, troca o bit de 1 para 0(indicar como livre)
     bitmap_buffer[byte_index] &= ~(1 << bit_index);
 
     // salvar o bitmap modificado no disco
-
     point_and_write(fs_info->fd, bitmap_block_num * fs_info->block_size, SEEK_SET, // lseek
                     bitmap_buffer, fs_info->block_size); // write
 
-    // atualzar e salvar na memoria os contadores
+    // atualzar e salvar na memoria os contadores baseado no tipo
     if (type == 'i') {
         fs_info->sb.s_free_inodes_count++;
         fs_info->group_desc_array[group_index].bg_free_inodes_count++;
@@ -459,6 +465,7 @@ void deallocate_item(ext2_info* fs_info, unsigned int item_number, char type) {
         fs_info->group_desc_array[group_index].bg_free_blocks_count++;
     }
 
+    // salva o superbloco das informações novas(free blocks, inodes
     point_and_write(fs_info->fd, 1024, SEEK_SET, &fs_info->sb, sizeof(super_block));
 
     // salvar o descritor de grupo
@@ -471,11 +478,14 @@ void deallocate_item(ext2_info* fs_info, unsigned int item_number, char type) {
 }
 
 
+// função auxiliar para verificar se o arquivo existe
 bool verify_file_exists(ext2_info* fs_info, unsigned int i_block, char* file_name) {
-    // percorrer o data block verificando se o arquivo existe
+    // le o datablock baseado no i_block passado
     char tmp[1024];
     read_data_block(fs_info, i_block, tmp, sizeof(tmp));
 
+
+    // percorrer o data block verificando se o arquivo existe
     char* actual_pointer = tmp;
     int bytes_read = 0;
 
