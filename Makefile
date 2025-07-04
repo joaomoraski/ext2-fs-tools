@@ -22,15 +22,15 @@ image:
 	rm $(IMAGE_NAME)
 	tar -xf myext2image.tar.gz
 
+verify-ext2:
+	e2fsck -nvf ${IMAGE_NAME}
+
 
 # --- Nem sei se vou usar isso ainda ---
 
 generate-ext2:
 	dd if=/dev/zero of=./myext2.iso bs=1024 count=64K
 	mkfs.ext2 -L "Volume do mouras" -b 1024 ./myext2.iso
-
-verify-ext2:
-	e2fsck -nvf ${IMAGE_NAME}
 
 mount:
 	sudo mount ${IMAGE_NAME} /mnt/ext2-project

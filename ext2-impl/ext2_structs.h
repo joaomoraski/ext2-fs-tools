@@ -7,8 +7,10 @@
 #define EXT2_STRUCTS_H
 #include <stdint.h>
 
-// packed é pra falar pro compilador para de ser fresco e ler exatamente como esta
-// inves de ler em multiplo de 4 adicionando padding ele le exatamente como ta la
+// compilador por padrão, alinha as variaveis com endereços de memoria para multiplos do tamanho delas.
+// neste caso, insere buracos invisiveis nos campos da struct, que seriam os paddings
+// O packed faz com que o compilador ignore esta logica e remova os buracos criados,
+// lendo byte a byte como esta no arquivo.
 typedef struct __attribute__((packed)) {
     unsigned int s_inodes_count;
     unsigned int s_blocks_count;
@@ -101,7 +103,7 @@ typedef struct __attribute__((packed)) {
     uint16_t rec_len;
     uint8_t name_len;
     uint8_t file_type;
-    char  name[255];
+    char name[255];
 } dir_entry;
 
 typedef struct {
