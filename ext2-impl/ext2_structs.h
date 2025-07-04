@@ -11,6 +11,8 @@
 // neste caso, insere buracos invisiveis nos campos da struct, que seriam os paddings
 // O packed faz com que o compilador ignore esta logica e remova os buracos criados,
 // lendo byte a byte como esta no arquivo.
+// foi usado porque no inicio eu criei alguns char paddings[X] para pular alguns campos
+// no fim, nao era mais necessário, mas mantive.
 typedef struct __attribute__((packed)) {
     unsigned int s_inodes_count;
     unsigned int s_blocks_count;
