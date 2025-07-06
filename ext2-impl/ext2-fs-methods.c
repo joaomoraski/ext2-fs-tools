@@ -302,7 +302,9 @@ unsigned int find_inode_number_by_path(ext2_info* fs_info, char* path) {
     return start_inode;
 }
 
-unsigned int find_parent_inode_and_final_name(ext2_info* fs_info, const char* full_path, char* final_name_out) {
+// Separa o path para pegar apenas o final do caminho, ultimo nome passado e dps retorna o numero do "pai"
+// foi usado para funções que precisavam chegar ate um caminho mas o final era o nome do arquivo que ainda n existe
+unsigned int find_parent_inode_and_filename(ext2_info* fs_info, const char* full_path, char* filename_out) {
     char path_copy[1024];
     strcpy(path_copy, full_path);
 
@@ -313,15 +315,15 @@ unsigned int find_parent_inode_and_final_name(ext2_info* fs_info, const char* fu
 
     if (ultimo_slash == NULL) { // teste.txt
         // se não tiver, é relativo e esta no diretorio
-        strcpy(final_name_out, path_copy);
+        strcpy(filename_out, path_copy);
         return fs_info->current_dir_inode;
     } else if (ultimo_slash == path_copy) { // /teste.txt
         // a unica barra é a primeira, o pai é a raiz
         // inode 2
-        strcpy(final_name_out, ultimo_slash + 1); // copia o que vem depois da '/'
+        strcpy(filename_out, ultimo_slash + 1); // copia o que vem depois da '/'
         strcpy(parent_path, "/");
     } else { // livros/teste.txt
-        strcpy(final_name_out, ultimo_slash + 1);
+        strcpy(filename_out, ultimo_slash + 1);
         *ultimo_slash = '\0'; // corta a string na barra, path_copy agora é "livros"
         strcpy(parent_path, path_copy);
     }
@@ -334,10 +336,14 @@ unsigned int find_parent_inode_and_final_name(ext2_info* fs_info, const char* fu
 void read_data_block(ext2_info* fs_info, int block_number, char* buffer, int buffer_size) {
     // endereço do conteudo
     int content_location = block_number * fs_info->block_size;
+    // aponta para a posição do conteudo e le o tamanho do buffer
     lseek(fs_info->fd, content_location, SEEK_SET);
     read(fs_info->fd, buffer, buffer_size);
 }
 
+// função generica para alocação de item, diferenciado pelo tipo, podendo ser i(i-node) e b(bloco)
+// variaveis de controle dos contadores sao armazenadas baseado no tipo passado
+// aloca um novo inode e retorna erro(0) ou o número do novo inode
 unsigned int allocate_item(ext2_info* fs_info, char type) {
     // loop para cada grupo no sistema de arquivos
     for (int i = 0; i < fs_info->num_block_groups; ++i) {
@@ -418,6 +424,8 @@ unsigned int allocate_item(ext2_info* fs_info, char type) {
     return 0; // retorna 0 se não encontrou nada em nenhum grupo
 }
 
+// função genericap ara desalocação do item, podendo ser inode(i) ou bloco(b)
+// as variaveis de contagem sao atualizadas baseado no tipo passado
 void deallocate_item(ext2_info* fs_info, unsigned int item_number, char type) {
     // variavel de controle de itens por grupo
     unsigned int items_per_group;
@@ -428,10 +436,17 @@ void deallocate_item(ext2_info* fs_info, unsigned int item_number, char type) {
         items_per_group = fs_info->sb.s_blocks_per_group;
     }
 
-    // todo especificar isso melhor
+    // -1 é necessário para garantir que não cause problemas com numeros proximos ao limite
+    // encontrar o grupo que o item esta, em qual grupo o inode esta
     unsigned int group_index = (item_number - 1) / items_per_group;
+    // descobre a posição do item dentro do grupo
+    // é feito a operação mod para encontrar, como descobrir qual indice do bloco 21 em 100 blocos
+    // 21 - 1 % 100 = 20 -> indice 20
     unsigned int local_index = (item_number - 1) % items_per_group;
+    // encontrar o byte e bit no bitmap
+    // como sabemos a posiçao, precisamos achar o byte, então dividimos a posição por 8 para achar o byte do mapa onde esta
     unsigned int byte_index = local_index / 8;
+    // encontra em qual bit esta a informação dentro do byte
     unsigned int bit_index = local_index % 8;
 
     // variavel para armazenar o bitmap
@@ -456,7 +471,7 @@ void deallocate_item(ext2_info* fs_info, unsigned int item_number, char type) {
     point_and_write(fs_info->fd, bitmap_block_num * fs_info->block_size, SEEK_SET, // lseek
                     bitmap_buffer, fs_info->block_size); // write
 
-    // atualzar e salvar na memoria os contadores baseado no tipo
+    // atualizar e salvar na memoria os contadores baseado no tipo
     if (type == 'i') {
         fs_info->sb.s_free_inodes_count++;
         fs_info->group_desc_array[group_index].bg_free_inodes_count++;
@@ -478,8 +493,8 @@ void deallocate_item(ext2_info* fs_info, unsigned int item_number, char type) {
 }
 
 
-// função auxiliar para verificar se o arquivo existe
-bool verify_file_exists(ext2_info* fs_info, unsigned int i_block, char* file_name) {
+// função auxiliar para verificar se o arquivo existe no sistema de arquivos
+bool verify_file_exists(ext2_info* fs_info, unsigned int i_block, char* filename) {
     // le o datablock baseado no i_block passado
     char tmp[1024];
     read_data_block(fs_info, i_block, tmp, sizeof(tmp));
@@ -496,7 +511,7 @@ bool verify_file_exists(ext2_info* fs_info, unsigned int i_block, char* file_nam
 
         // 0 significa excluido ou vazio
         if (entry->inode != 0) {
-            if (strncmp(file_name, entry->name, entry->name_len) == 0 && strlen(file_name) == entry->name_len) {
+            if (strncmp(filename, entry->name, entry->name_len) == 0 && strlen(filename) == entry->name_len) {
                 return true;
             }
         }

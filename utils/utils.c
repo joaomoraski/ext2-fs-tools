@@ -7,12 +7,14 @@
 #include <unistd.h>
 #include "../ext2-impl/ext2-defs.h"
 
+// formata a data pro formato exemplo do documento
 void format_date(uint32_t timestamp, char* buffer, int buffer_size) {
     time_t brute_time = timestamp;
     struct tm* time_struct = localtime(&brute_time);
     strftime(buffer, buffer_size, "%d/%m/%Y %H:%M", time_struct);
 }
 
+// função para arrumar o path, considerando se o inicio é a raiz (/), se caso tenha .. e etc.
 void resolve_path_string(char* resolved_path, const char* current_path, char* path_to_resolve) {
     // como o strtok modifica o valor da variavel, fiz uma copia
     char path_to_resolve_copy[1024];
@@ -38,7 +40,6 @@ void resolve_path_string(char* resolved_path, const char* current_path, char* pa
             // se é ".", não faz nada
         } else {
             // se for um nome de diretorio, adiciona
-
             // adiciona uma barra caso nao seja na raiz
             if (strcmp(resolved_path, "/") != 0) {
                 strcat(resolved_path, "/");
@@ -51,7 +52,7 @@ void resolve_path_string(char* resolved_path, const char* current_path, char* pa
     }
 }
 
-
+// troca o nivel do path, pra tras, por exemplo(..)
 void change_path_level(char* current_path) {
     // se ja esta na raiz ok
     if (strcmp(current_path, "/") == 0) {
@@ -118,12 +119,15 @@ void mount_permissions_string(uint16_t i_mode, char* permission_string) {
     permission_string[10] = '\0';
 }
 
+// abstração para fazer a escrita em algum ponto especifico da memoria, passa o numero de bytes a escrever
+// e o buffer
 void point_and_write(int fd, long offset, int whence, const void* buffer, size_t bytes_to_write) {
     lseek(fd, offset, whence);
     write(fd, buffer, bytes_to_write);
 }
 
 // faz o parse do input para considerar se o argumento esta entre aspas
+// ex mkdir "moraski lunkes".
 int parse_input(char* input, char** args) {
     int argc = 0;
     char* arg_start = NULL; // ponteiro do inicio do argumento

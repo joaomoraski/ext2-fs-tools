@@ -13,7 +13,9 @@
 
 void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
                       long* bytes_read);
-// comando de info
+
+// função para o comando info
+// printa as principais informações do superbloco
 void info(ext2_info fs_info) {
     super_block super_block = fs_info.sb;
     unsigned int block_size = fs_info.block_size;
@@ -42,6 +44,8 @@ void info(ext2_info fs_info) {
     );
 }
 
+// função do comando ls
+// lista baseado no diretorio passado ou no diretorio atual
 void ls(ext2_info fs_info, char* path) {
     inode_struct inode;
     // verificação se o ls passa um caminho ou não
@@ -75,6 +79,7 @@ void ls(ext2_info fs_info, char* path) {
     char tmp[1024];
     read_data_block(&fs_info, inode.i_block[0], tmp, sizeof(tmp));
 
+    // faz o loop pelo datablock printando cada entrada de diretorio
     char* actual_pointer = tmp;
     int bytes_read = 0;
 
@@ -104,6 +109,7 @@ void ls(ext2_info fs_info, char* path) {
 }
 
 // print superblock, usado para depuração
+// printa todas as informações do superbloco
 void print_superblock(ext2_info fs_info) {
     super_block super_block = fs_info.sb;
     char lastcheck[50];
@@ -214,6 +220,7 @@ void print_superblock(ext2_info fs_info) {
 
 
 // print groups, usado para depuração
+// printa todas as informações dos descritores de grupo
 void print_groups(ext2_info fs_info) {
     for (int i = 0; i < fs_info.num_block_groups; ++i) {
         group_desc group_desc = fs_info.group_desc_array[i];
@@ -230,6 +237,7 @@ void print_groups(ext2_info fs_info) {
 }
 
 // print inode, usado para depuração
+// printa todas as informações do inode informado
 void print_inode(ext2_info fs_info, unsigned int inode_number) {
     inode_struct inode = read_inode_by_number(&fs_info, inode_number);
     printf("file format and access rights: 0x%x\n"
@@ -254,19 +262,26 @@ void print_inode(ext2_info fs_info, unsigned int inode_number) {
            "location file fragment: %d\n", inode.i_generation, inode.i_file_acl, inode.i_dir_acl, inode.i_faddr);
 }
 
+// comando cd
+// faz a troca de diretorio, atualiza o path e o current_dir_inode
 void cd(ext2_info* fs_info, char* path) {
+    // faz uma copia do caminho para a manipulação dele não acabar corrompendo o original
     char path_copy[1024];
     strcpy(path_copy, path);
+    // encontra o numero do inode pelo caminho informado
     unsigned int inode_number = find_inode_number_by_path(fs_info, path_copy);
 
+    // se for 0, informa que tem algo errado
     if (inode_number == 0) {
         // Não achou o diretorio, voltou com o erro
         printf("cd: o diretorio '%s': não foi encontrado.\n", path);
         return;
     }
 
+    // pega o inode pelo numero informado
     inode_struct inode = read_inode_by_number(fs_info, inode_number);
 
+    // verifica se é diretorio, se não for, retorna erro
     if (!is_dir(inode.i_mode)) {
         printf("'%s': Não é um diretório\n", path);
         return;
@@ -277,66 +292,84 @@ void cd(ext2_info* fs_info, char* path) {
     // atualizar a string do caminho
     char new_path[1024];
     resolve_path_string(new_path, fs_info->current_path, path);
-
+    // copia o caminho novo para o atual, substituindo o valor
     strcpy(fs_info->current_path, new_path);
 }
 
+// comando attr
+// retorna informações como o tamanho, permissoes, datas de modificação e etc
 void attr(ext2_info* fs_info, char* path) {
+    // faz uma copia do caminho para não mudar o informado
     char path_copy[1024];
     strcpy(path_copy, path);
+    // pega o numero do inode pelo path informado
     unsigned int inode_number = find_inode_number_by_path(fs_info, path);
 
+    // se não achou, informa erro
     if (inode_number == 0) {
         // Não achou o diretorio, voltou com o erro
         printf("attr: o arquivo '%s': não foi encontrado.\n", path);
         return;
     }
 
+    // carrega o inode pelo numero
     inode_struct inode = read_inode_by_number(fs_info, inode_number);
     char permissions_string[100];
+    // monta a string de permissões baseado no i_mode
     mount_permissions_string(inode.i_mode, permissions_string);
     char buffer[1024];
+    // formata a data para o formato de exemplo
     format_date(inode.i_atime, buffer, 1024);
+    // printa as informações
     printf("permissões\tuid\tgid\ttamanho\tmodificado em\n"
            "%s\t%hu\t%hu\t%.1f KiB\t%s\n", permissions_string, inode.i_uid, inode.i_gid, inode.i_size / 1024.0, buffer);
 }
 
+// comando cat
+// faz a leitura dos blocos de um arquivo
 void cat(ext2_info* fs_info, char* path) {
+    // faz uma copia do caminho para não mudar o informado
     char path_copy[1024];
     strcpy(path_copy, path);
+    // pega o numero do inode pelo path informado
     unsigned int inode_number = find_inode_number_by_path(fs_info, path);
 
+    // se não achou, informa erro
     if (inode_number == 0) {
         // Não achou o diretorio, voltou com o erro
         printf("cat: o arquivo '%s': não foi encontrado.\n", path);
         return;
     }
 
+    // carrega o inode pelo numero dele
     inode_struct inode = read_inode_by_number(fs_info, inode_number);
+    // se for diretorio, informa um erro
     if (is_dir(inode.i_mode)) {
         printf("cat: '%s': É um diretório\n", path); // roubei o padrao do linux
-        // TODO colocar esse padrao em todos os logs de erro
         return;
     }
 
+    // calcula o tamanho total e o numero de dados lidos
     long total_length = inode.i_size;
     long bytes_read = 0;
 
+    // block buffer do tamanho do bloco
     char block_buffer[fs_info->block_size];
 
+    // variavel de controle de leitura
     bool read_done = false;
 
     // apenas lidando com 12 entradas
     // 13 e 14 sao ponteiros indiretos
     for (int i = 0; i < 12; ++i) {
+        // pega o numero do bloco na posição i
         unsigned int block_number = inode.i_block[i];
 
         // previnir de printar lixo de memoria
-        // não tem mais blocos de dados
-        if (block_number == 0) {
-            break;
-        }
+        // não tem mais blocos de dados, ou esta com algum problema
+        if (block_number == 0) continue;
 
+        // função para printar as informações do bloco de dados
         print_data_block(fs_info, block_number, block_buffer, &total_length, &bytes_read);
 
         // se o total de lidos for maior ou igual ao tamanho total, sai do loop
@@ -457,35 +490,45 @@ void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block
     bytes_read += bytes_to_print;
 }
 
+// comando touch
+// cria arquivos, aceita path tbm para criar dentro de pastas
 void touch(ext2_info* fs_info, char* path_to_file) {
+    // faz uma copia do caminho para não corromper
     char path_copy[1024];
     strcpy(path_copy, path_to_file);
-    char file_name[256];
-    unsigned int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_copy, file_name);
+    // string para separar o nome do arquivo
+    char filename[256];
+    // pega o numero do inode pai e o nome do arquivo
+    unsigned int parent_inode_number = find_parent_inode_and_filename(fs_info, path_copy, filename);
+    // se não encontrou, informa erro
     if (parent_inode_number == 0) {
         printf("touch: diretorio pai não encontrado!\n"); // todo pegar o padrao do linux
         return;
     }
 
+    // le o inode do pai
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_number);
+    // verifica se o inode é um diretorio, se não for informa que parte do caminho não é um diretorio
     if (!is_dir(parent_inode.i_mode)) {
         printf("touch: parte do caminho não é um diretorio\n"); // todo pegar o padrao do linux
         return;
     }
 
     // percorrer o data block verificando se o arquivo existe
-    if (verify_file_exists(fs_info, parent_inode.i_block[0], file_name)) {
-        printf("touch: arquivo '%s' já existe\n", file_name); // todo pegar o padrao do linux
+    if (verify_file_exists(fs_info, parent_inode.i_block[0], filename)) {
+        printf("touch: arquivo '%s' já existe\n", filename); // todo pegar o padrao do linux
         return;
     }
 
     // verificar se o bloco possui espaço para a alocação de novas coisas
-    bool has_space = add_dir_entry(fs_info, parent_inode_number, 0, file_name, 0, false);
+    // modo dry-run do add_dir_entry para verificar isso
+    bool has_space = add_dir_entry(fs_info, parent_inode_number, 0, filename, 0, false);
     if (!has_space) {
         // print de erro ja esta la dentro
         return;
     }
 
+    // aloca um novo inode e pega o numero dele
     unsigned int new_inode_num = allocate_item(fs_info, 'i');
     if (new_inode_num == 0) {
         // ocorreu um erro
@@ -506,28 +549,39 @@ void touch(ext2_info* fs_info, char* path_to_file) {
     new_inode.i_mtime = timestamp;
     new_inode.i_atime = timestamp;
 
+    // escreve as informações dos inodes pelo numero novo informado
     write_inode_by_number(fs_info, new_inode_num, &new_inode);
 
-    add_dir_entry(fs_info, parent_inode_number, new_inode_num, file_name, EXT2_FT_REG_FILE, true);
+    // adiciona a nova entrada de diretorio para o arquivo novo
+    add_dir_entry(fs_info, parent_inode_number, new_inode_num, filename, EXT2_FT_REG_FILE, true);
 }
 
+// comando mkdir
+// executa a criação de pastas
 void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
+    // faz a copia d path para não corromper o caminho
     char path_copy[1024];
     strcpy(path_copy, path_to_file);
+    // pega o novo nome de diretorio
     char new_dir_name[256];
 
-    unsigned int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_to_file, new_dir_name);
+    // pega o numero do inode pai
+    unsigned int parent_inode_number = find_parent_inode_and_filename(fs_info, path_to_file, new_dir_name);
+    // se o diretorio pai não existe informa erro
     if (parent_inode_number == 0) {
         printf("mkdir: erro, diretorio pai não existe\n");
         return;
     }
 
+    // carrega o inode pai pelo numero informado
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_number);
+    // verifica se é um diretorio ou não
     if (!is_dir(parent_inode.i_mode)) {
         printf("mkdir: parte do caminho não é diretorio\n");
         return;
     }
 
+    // verifica se o diretorio ja existe
     if (verify_file_exists(fs_info, parent_inode.i_block[0], new_dir_name)) {
         printf("mkdir: não foi possível criar o diretório \"%s\": Arquivo existe\n", path_to_file);
         return;
@@ -543,9 +597,13 @@ void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
 
     // cria o inode do diretorio, para indicar para um datablock onde vai ter os dados do diretorio
     unsigned int new_dir_inode_num = allocate_item(fs_info, 'i');
+    // caso de erro ja retorna
     if (new_dir_inode_num == 0) return;
+    // aloca o bloco para o novo diretorio
     unsigned int new_data_block_num = allocate_item(fs_info, 'b');
+    // caso de erro, tem que desalocar o inode ja criado
     if (new_data_block_num == 0) {
+        // desaloca o inode ja criado
         deallocate_item(fs_info, new_dir_inode_num, 'i');
         return;
     }
@@ -563,9 +621,11 @@ void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
     point_and_write(fs_info->fd, group_desc_position, SEEK_SET, &fs_info->group_desc_array[group_of_new_inode],
                     sizeof(group_desc));
 
+    // aumenta a contagem de links do pai e ja salva
     parent_inode.i_links_count++;
     write_inode_by_number(fs_info, parent_inode_number, &parent_inode);
 
+    // monta o inode novo
     // seta tudo com 0 inicialmente
     // como é touch, garante que o i_block[0-14] é preenchido com 0
     inode_struct new_inode = {0};
@@ -583,9 +643,13 @@ void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
     new_inode.i_mtime = timestamp;
     new_inode.i_atime = timestamp;
 
+    // escreve na posição deste inode as informações do novo inode
     write_inode_by_number(fs_info, new_dir_inode_num, &new_inode);
 
+    // cria o buffer de bloco e seta com 0
+    // para previnir lixo de memoria de nomes e etc
     char block_buffer[fs_info->block_size];
+    // feito apos descobrir erro em criar um diretorio com nome maior que o anterior deletado
     memset(block_buffer, 0, fs_info->block_size);
 
     // cria as entradas de diretorio . e .. no buffer do diretorio
@@ -608,6 +672,7 @@ void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
     // aloca o tamanho total restante
     parent_entry->rec_len = fs_info->block_size - self_entry->rec_len;
 
+    // salva a informações no novo bloco(do diretorio)
     point_and_write(fs_info->fd, new_data_block_num * fs_info->block_size, SEEK_SET,
                     block_buffer, fs_info->block_size);
 
@@ -616,41 +681,49 @@ void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
                   EXT2_FT_DIR, true);
 }
 
-
+// comando rm, remove arquivos informados pelo path
 void rm(ext2_info* fs_info, char* path) {
     char filename[1024];
+    // faz a copia do path
     char path_copy[1024];
     strcpy(path_copy, path);
+    // pega o inode do arquivo desejado a ser removido
     int target_inode_number = find_inode_number_by_path(fs_info, path_copy);
 
+    // se não foi encontrado retorna erro
     if (target_inode_number == 0) {
         // Não achou o diretorio, voltou com o erro
         printf("rm: o arquivo '%s': não foi encontrado.\n", path);
         return;
     }
 
+    // refaz a copia do path
     strcpy(path_copy, path);
-    int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_copy, filename);
+    // pega o numero do inode pai e separa o filename
+    int parent_inode_number = find_parent_inode_and_filename(fs_info, path_copy, filename);
 
     // esse erro não seria tao necessário já que o find_inode_number_by_path já retornaria erro, mas achei melhor tratar
+    // se não achar o pai print erro
     if (parent_inode_number == 0) {
         // não achou o diretorio, voltou com o erro
         printf("rm: o diretorio pai não foi encontrado.\n");
         return;
     }
 
+    // le o inode do arquivo a ser removido
     inode_struct target_inode = read_inode_by_number(fs_info, target_inode_number);
+    // se for diretorio informa erro
     if (is_dir(target_inode.i_mode)) {
-        // todo padronizar o erro para o linux
         printf("rm: erro \"%s\" é um diretorio\n", filename);
         return;
     }
 
     // diminui a contagem de link do proprio arquivo
     target_inode.i_links_count--;
+    // seta o time de delete para o atual
     target_inode.i_dtime = time(NULL);
 
-    // escreve esta mudança na memoria
+    // escreve esta mudança na memoria do inode
     write_inode_by_number(fs_info, target_inode_number, &target_inode);
 
     // remove a entrada do diretorio para deixar o inode orfao
@@ -659,6 +732,7 @@ void rm(ext2_info* fs_info, char* path) {
     // apaga os blocos normais
     for (int i = 0; i < 12; ++i) {
         if (target_inode.i_block[i] != 0) {
+            // apaga bloco por bloco
             deallocate_item(fs_info, target_inode.i_block[i], 'b');
         }
     }
@@ -672,13 +746,13 @@ void rm(ext2_info* fs_info, char* path) {
         read_data_block(fs_info, target_inode.i_block[12], (char*)pointers_block, fs_info->block_size);
 
         // apagar cada bloco registrado
-
         for (int i = 0; i < 256; i++) {
             if (pointers_block[i] != 0) {
+                // apaga bloco por bloco
                 deallocate_item(fs_info, pointers_block[i], 'b');
             }
         }
-
+        // apaga bloco por bloco
         deallocate_item(fs_info, target_inode.i_block[12], 'b');
     }
 
@@ -711,22 +785,29 @@ void rm(ext2_info* fs_info, char* path) {
     deallocate_item(fs_info, target_inode_number, 'i');
 }
 
-
+// comando rmdir, remove diretorios pelo path informado
 void cmd_rmdir(ext2_info* fs_info, char* path) {
     char filename[1024];
+    // faz a copia do path
     char path_copy[1024];
     strcpy(path_copy, path);
+
+    // localiza o inode do diretorio a ser removido
     int target_inode_number = find_inode_number_by_path(fs_info, path_copy);
 
+    // se não achou, retorna erro
     if (target_inode_number == 0) {
         // Não achou o diretorio, voltou com o erro
         printf("rmdir: o diretorio '%s': não foi encontrado.\n", path);
         return;
     }
 
+    // refaz a copia
     strcpy(path_copy, path);
-    int parent_inode_number = find_parent_inode_and_final_name(fs_info, path_copy, filename);
+    // pega o inode do pai e preenche o filename
+    int parent_inode_number = find_parent_inode_and_filename(fs_info, path_copy, filename);
 
+    // se não achou o pai, retorna erro
     // esse erro não seria tao necessário já que o find_inode_number_by_path já retornaria erro, mas achei melhor tratar
     if (parent_inode_number == 0) {
         // Não achou o diretorio, voltou com o erro
@@ -734,34 +815,41 @@ void cmd_rmdir(ext2_info* fs_info, char* path) {
         return;
     }
 
+    // se for . ou .. não pode permitir apagar
     if (strcmp(filename, ".") == 0 || strcmp(filename, "..") == 0) {
         printf("rm: erro \"%s\" não é permitido a remoção deste diretorio\n", path);
         return;
     }
 
+    // pega o inode a ser removido
     inode_struct target_inode = read_inode_by_number(fs_info, target_inode_number);
+    // se não for diretorio informa erro
     if (!is_dir(target_inode.i_mode)) {
         printf("rmdir: falhou em remover '%s': Não é um diretorio\n", filename);
         return;
     }
 
+    // le o data block do diretorio
     char tmp[1024];
     read_data_block(fs_info, target_inode.i_block[0], tmp, sizeof(tmp));
 
     char* actual_pointer = tmp;
     int bytes_read = 0;
 
+    // percorre as entradas de diretorio do alvo para ver se existe alguma coisa dentro
     while (bytes_read < BASE_BLOCK) {
         dir_entry* entry = (dir_entry*)actual_pointer;
 
         if (entry->rec_len == 0) break;
 
         // 0 significa excluido ou vazio
+        // se tiver . ou .. ele desconsidera
         if (entry->inode != 0 && strcmp(entry->name, ".") != 0 && strcmp(entry->name, "..") != 0) {
             printf("rmdir: falhou em remover '%s': Diretório não está vazio\n", filename);
             return;
         }
 
+        // atualiza as contagens
         actual_pointer += entry->rec_len;
         bytes_read += entry->rec_len;
     }
@@ -769,15 +857,22 @@ void cmd_rmdir(ext2_info* fs_info, char* path) {
     // decrementar o contador de links do diretorio do pai
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_number);
 
+    // diminui a contagem de links do pai
     parent_inode.i_links_count--;
+    // seta a do target para 0 e a data de delete
     target_inode.i_links_count = 0;
     target_inode.i_dtime = time(NULL);
 
+    // pega o numero do grupo que o inode esta
     int group_to_update = (target_inode_number - 1) / fs_info->sb.s_inodes_per_group;
+    // atualiza a informação de dirs count
     fs_info->group_desc_array[group_to_update].bg_used_dirs_count--;
+    // escreve as informações do pai e do inode alvo
     write_inode_by_number(fs_info, parent_inode_number, &parent_inode);
     write_inode_by_number(fs_info, target_inode_number, &target_inode);
+    // pega a posição do group desc do grupo alterado
     unsigned int group_desc_position = fs_info->block_size * 2 + (group_to_update * sizeof(group_desc));
+    // altera os dados do grupo
     point_and_write(fs_info->fd, group_desc_position, SEEK_SET, &fs_info->group_desc_array[group_to_update],
                     sizeof(group_desc));
 
@@ -790,16 +885,20 @@ void cmd_rmdir(ext2_info* fs_info, char* path) {
     deallocate_item(fs_info, target_inode_number, 'i');
 }
 
+// comando cp, faz a copia de um arquivo de dentro da imagem para fora
 int cp(ext2_info* fs_info, char* source_path, char* target_path) {
+    // abre o arquivo
     // write binary para ser mais facil a transição de dados
-    printf("%s\n", target_path);
     FILE* target_file = fopen(target_path, "wb");
+    // se der erro, pode ser permissoa, nao existe e etc
     if (target_file == NULL) {
         printf("cp: erro na abertura do arquivo no sistema\n");
         return EXIT_FAILURE;
     }
+    // faz a copia do path
     char copy_path[1024];
     strcpy(copy_path, source_path);
+    // pega o numero do inode pelo caminho informado
     unsigned int inode_number = find_inode_number_by_path(fs_info, copy_path);
 
     if (inode_number == 0) {
@@ -807,16 +906,20 @@ int cp(ext2_info* fs_info, char* source_path, char* target_path) {
         return EXIT_FAILURE;
     }
 
+    // carrega o inode pelo numero passado
     inode_struct inode = read_inode_by_number(fs_info, inode_number);
 
+    // se for diretorio informa erro
     if (is_dir(inode.i_mode)) {
         printf("cp: erro '%s' é um diretorio\n", source_path);
         return EXIT_FAILURE;
     }
 
+    // pega o tamanho total pelo tamanho do inode
     long total_length = inode.i_size;
     long bytes_read = 0;
 
+    // cria o buffer pelo tamanho do bloco
     char block_buffer[fs_info->block_size];
 
     bool read_done = false;
@@ -832,6 +935,7 @@ int cp(ext2_info* fs_info, char* source_path, char* target_path) {
             break;
         }
 
+        // escreve os dados para fora
         write_data_block_out(fs_info, block_number, block_buffer, total_length, &bytes_read, target_file);
 
         // se o total de lidos for maior ou igual ao tamanho total, sai do loop
@@ -906,6 +1010,9 @@ int cp(ext2_info* fs_info, char* source_path, char* target_path) {
     return EXIT_SUCCESS;
 }
 
+
+// comando mv, move um arquivo para fora da imagem
+// implementação basica, fiz o cp com um rm em caso se sucesso
 void mv(ext2_info* fs_info, char* source_path, char* target_path) {
     // cp ja faz o trabalho de copiar o arquivo para fora
     int result = cp(fs_info, source_path, target_path);
@@ -916,32 +1023,41 @@ void mv(ext2_info* fs_info, char* source_path, char* target_path) {
     }
 }
 
+// cmd rename
+// renomea o arquivo informado
 void cmd_rename(ext2_info* fs_info, char* source_name, char* new_name) {
+    // faz a copia do path
     char source_path[1024];
     strcpy(source_path, source_name);
+    // pega o arquivo pelo path informado
     unsigned int inode_number = find_inode_number_by_path(fs_info, source_path);
 
+    // se for 0 ele informa que n existe
     if (inode_number == 0) {
         printf("rename: erro '%s' não existe\n", source_name);
         return;
     }
 
-    char new_path_copy[1024];
-    strcpy(new_path_copy, new_name);
-    unsigned int new_name_check = find_inode_number_by_path(fs_info, new_path_copy);
-
-    if (new_name_check != 0) {
-        printf("rename: falhou em renomear para '%s': Arquivo já existe\n", new_name);
-        return;
-    }
-
+    // faz a copia do source path
     strcpy(source_path, source_name);
+    // pega o filename atual do arquivo
     char filename[1024];
-    unsigned int parent_inode_number = find_parent_inode_and_final_name(fs_info, source_path, filename);
+    unsigned int parent_inode_number = find_parent_inode_and_filename(fs_info, source_path, filename);
 
+    // se o pai não foi encontrado retorna erro
     if (parent_inode_number == 0) {
         // Não achou o diretorio, voltou com o erro
         printf("rename: o diretorio pai: não foi encontrado.\n");
+        return;
+    }
+
+    // carrega o inode do pai e o do alvo
+    inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_number);
+    inode_struct target_inode = read_inode_by_number(fs_info, inode_number);
+
+    // se existe informa erro
+    if (verify_file_exists(fs_info, parent_inode.i_block[0], new_name)) {
+        printf("rename: falhou em renomear para '%s': Arquivo já existe\n", new_name);
         return;
     }
 
@@ -951,30 +1067,40 @@ void cmd_rename(ext2_info* fs_info, char* source_name, char* new_name) {
         return;
     }
 
+    // controla o tipo da nova dir_entry pelo tipo do inode atual
+    int file_type = is_dir(target_inode.i_mode) ? EXT2_FT_DIR : EXT2_FT_REG_FILE;
     // adiciona a nova entrada, usando o mesmo inode, mas nome diferente.
-    if (!add_dir_entry(fs_info, parent_inode_number, inode_number, new_name, EXT2_FT_REG_FILE, true)) {
+    if (!add_dir_entry(fs_info, parent_inode_number, inode_number, new_name, file_type, true)) {
         printf("rename: erro ao recriar entrada de diretório. O sistema pode estar inconsistente.\n");
     }
 }
 
+// implementação do comando touch para varios arquivos
+// não sei se é o correto, mas fiz apenas um loop dos valores
 void multi_touch(ext2_info* fs_info, char** args, int argc) {
     for (int i = 1; i < argc; ++i) {
         touch(fs_info, args[i]);
     }
 }
 
+// implementação do comando mkdir para varios arquivos
+// não sei se é o correto, mas fiz apenas um loop dos valores
 void multi_cmd_mkdir(ext2_info* fs_info, char** args, int argc) {
     for (int i = 1; i < argc; ++i) {
         cmd_mkdir(fs_info, args[i]);
     }
 }
 
+// implementação do comando rm para varios arquivos
+// não sei se é o correto, mas fiz apenas um loop dos valores
 void multi_rm(ext2_info* fs_info, char** args, int argc) {
     for (int i = 1; i < argc; ++i) {
         rm(fs_info, args[i]);
     }
 }
 
+// implementação do comando rmdir para varios arquivos
+// não sei se é o correto, mas fiz apenas um loop dos valores
 void multi_cmd_rmdir(ext2_info* fs_info, char** args, int argc) {
     for (int i = 1; i < argc; ++i) {
         cmd_rmdir(fs_info, args[i]);

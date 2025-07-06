@@ -20,6 +20,7 @@
 #define MAX_INPUT 1024
 #define MAX_ARGS 100
 
+// monta a string do prompt
 void get_prompt_string(ext2_info fs_info, char* prompt_buffer, int buffer_size) {
     struct passwd* pw = getpwuid(getuid());
     char* username = pw->pw_name;
@@ -28,6 +29,7 @@ void get_prompt_string(ext2_info fs_info, char* prompt_buffer, int buffer_size) 
     snprintf(prompt_buffer, buffer_size, "╭─%s@(%s)\n╰─$ ", username, fs_info.current_path);
 }
 
+// sinal usado para em caso de parar com sigint ou sigterm para um safe "save" do historico
 void save_history_on_shutdown() {
     write_history(HISTORY_FILE);
     exit(EXIT_SUCCESS);
