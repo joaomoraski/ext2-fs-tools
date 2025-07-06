@@ -15,6 +15,7 @@ Created by https://www.toptal.com/developers/gitignore/api/clion+all,visualstudi
 .ext2_shell_history
 ext2shell
 *.iso
+*.tar.gz
 
 # AWS User-specific
 .idea/**/aws.xml

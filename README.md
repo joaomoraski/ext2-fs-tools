@@ -1,89 +1,130 @@
-# Projeto - Implementação do Sistema de Arquivos EXT2
+# Projeto de Sistemas Operacionais - Shell para EXT2
 
-Implementar estruturas de dados e operações para manipular a imagem (.iso) de um sistema de arquivos EXT2. As operações
-devem ser invocadas a partir de um prompt (shell). O shell deve executar as operações a partir da referência do
-diretório atual. Considere que o programa shell desenvolvido sempre inicia na raiz (/) da imagem manipulada.
+Este projeto consiste em uma implementação de um shell de linha de comando em C, desenvolvido como atividade para a
+disciplina de Sistemas Operacionais. A aplicação é capaz de ler e manipular uma imagem de disco no formato EXT2,
+permitindo a execução de operações fundamentais como navegação, leitura, criação e remoção de arquivos e diretórios.
 
-## Índice
+O shell utiliza a biblioteca `GNU Readline` para prover uma interface de usuário rica, com histórico de comandos e
+edição de linha, e implementa do zero toda a lógica para interagir com as estruturas de dados do EXT2,
+como o Superbloco, Descritores de Grupo, Tabela de Inodes e Bitmaps.
 
-* [Projeto - Implementação do Sistema de Arquivos EXT2](#projeto---implementação-do-sistema-de-arquivos-ext2)
-  * [Índice](#índice)
-  * [Inicialização da estrutura](#inicialização-da-estrutura)
-    * [Estruturas de Dados Necessárias](#estruturas-de-dados-necessárias)
-    * [Comandos](#comandos)
-      * [Leitura.](#leitura)
-      * [Escrita.](#escrita)
-      * [Movimentação para fora da imagem.](#movimentação-para-fora-da-imagem)
-  * [Referencias](#referencias)
+---
+* [Projeto de Sistemas Operacionais - Shell para EXT2](#projeto-de-sistemas-operacionais---shell-para-ext2)
+  * [Funcionalidades Implementadas](#funcionalidades-implementadas)
+  * [Estrutura do Projeto](#estrutura-do-projeto)
+  * [Como Compilar e Executar](#como-compilar-e-executar)
+  * [Rotina de Testes e Validação](#rotina-de-testes-e-validação)
+  * [Decisões de Design e Desafios](#decisões-de-design-e-desafios)
+  * [Autor](#autor)
+  * [Licença](#licença)
+---
 
-## Inicialização da estrutura
+## Funcionalidades Implementadas
 
-- [X] Criar estrutura de arquivo
-- [X] Criar imagem e montar
-- [X] Criar Makefile para gerar a imagem e montar
-- [X] Criar esboço do terminal da atividade
-    - [X] Usar o da atividade de processos
+A tabela a seguir detalha todos os comandos implementados no shell:
 
-### Estruturas de Dados Necessárias
+| Comando  | Sintaxe                    | Descrição                                                                                                  |
+|:---------|:---------------------------|:-----------------------------------------------------------------------------------------------------------|
+| `info`   | `info`                     | Exibe informações gerais do sistema de arquivos, como contadores de inodes e blocos.                       |
+| `ls`     | `ls [path]`                | Lista os arquivos e diretórios do diretório corrente ou do `path` especificado.                            |
+| `cd`     | `cd <path>`                | Altera o diretório corrente para o `path` especificado. Suporta `.` e `..`.                                |
+| `pwd`    | `pwd`                      | Exibe o caminho absoluto do diretório corrente.                                                            |
+| `attr`   | `attr <path>`              | Exibe os atributos do inode do arquivo ou diretório especificado.                                          |
+| `cat`    | `cat <path>`               | Exibe o conteúdo de um arquivo. Suporta blocos diretos e indiretos.                                        |
+| `touch`  | `touch <file1> [file2...]` | Cria um ou mais arquivos vazios.                                                                           |
+| `mkdir`  | `mkdir <dir1> [dir2...]`   | Cria um ou mais diretórios vazios.                                                                         |
+| `rm`     | `rm <file1> [file2...]`    | Remove um ou mais arquivos. Lida com a contabilidade de `i_links_count`.                                   |
+| `rmdir`  | `rmdir <dir1> [dir2...]`   | Remove um ou mais diretórios, somente se estiverem vazios.                                                 |
+| `rename` | `rename <old> <new>`       | Renomeia um arquivo ou diretório dentro do mesmo diretório pai.                                            |
+| `cp`     | `cp <src_img> <dest_host>` | Copia um arquivo de dentro da imagem para o sistema de arquivos do hospedeiro.                             |
+| `mv`     | `mv <src_img> <dest_host>` | Move um arquivo de dentro da imagem para o sistema de arquivos do hospedeiro (executa `cp` e depois `rm`). |
+| `clear`  | `clear`                    | Limpa a tela do terminal.                                                                                  |
+| `exit`   | `exit`                     | Encerra a execução do shell.                                                                               |
 
-- [X] Implementar estrutura do Superblock
-- [X] Implementar estrutura do Group Descriptor
-- [X] Implementar estrutura do Inode
-- [X] Implementar a estrutura da entrada de diretório (dir_entry)
-- [X] Implementar a estrutura para manipulação dos dados
-    - Estrutura para controlar alguns dados
-    - Vai armazenar o superbloco, descritores de grupos, tamanho do bloco
-    - número de blocos, atual diretório e o file descriptor da imagem
+---
 
-### Comandos
+## Estrutura do Projeto
 
-#### Leitura.
+O código-fonte está organizado nos seguintes diretórios:
 
-- [X] Comando `info`
-    - Exibe informações do disco e do sistema de arquivos.
-- [X] Comando `cat <file>`
-    - Exibe conteúdo de um arquivo.
-- [X] Comando `attr <file | dir>`
-    - Mostra atributos do inode(tipo, permissão, timestamp e etc).
-- [X] Comando `cd <path>`
-    - Navega para diretórios e lista arquivos de um diretório.
-- [X] Comando `ls`
-    - Lista os arquivos e diretórios do diretório corrente.
-    - [X] Melhorar para listar do diretório informado no comando `ls <path>`.
-- [X] Comando `pwd`
-    - Exibe o caminho absoluto do diretório atual.
+```
+/
+  ├── commands/         # Contém a implementação de cada comando do shell (ls.c, cd.c, etc.)
+    ├── commands.c
+    ├── commands.h
+  ├── ext2-impl/        # Lógica principal para interagir com o EXT2
+  │   ├── ext2-fs-methods.c
+  │   └── ext2\_structs.h
+  ├── utils/            # Funções de ajuda genéricas (parser de input, formatadores, e etc.)
+    ├── utils.c
+    ├── utils.h
+  ├── relatorio_tecnico_ext2_1904000.pdf # O relatório técnico do projeto
+  ├── Demais arquivos
+  └── Makefile          # Arquivo para compilação e verificação e etc
+````
+---
 
-#### Escrita.
+## Como Compilar e Executar
 
-- [X] Comando `touch <file>`
-    - Cria o arquivo _file_ com conteúdo vazio.
-    - [X] Melhorar para aceitar múltiplas entradas
-- [X] Comando `mkdir <dir>`
-    - Cria o diretório _dir_ vazio.
-    - [X] Melhorar para aceitar múltiplas entradas
-- [X] Comando `rm <file>`
-    - Remove o arquivo _file_ do sistema.
-    - [X] Melhorar para aceitar múltiplas entradas
-- [X] Comando `rmdir <dir>`
-    - Remove o diretório _dir_, se estiver vazio.
-    - [X] Melhorar para aceitar múltiplas entradas
-- [X] Comando `rename <file> <newfilename>`
-    - Renomeia o arquivo _file_ para _newfilename_.
+O projeto utiliza um `Makefile` para automatizar o processo.
+**Para compilar o shell:**
+Este comando ira compilar o shell
+```bash
+make
+```
 
-#### Movimentação para fora da imagem.
 
-- [X] Comando `cp <source_path> <target_path>`
-    - Copia um arquivo de origem (_source_path_) para o destino (_target_path_)
-- [X] Comando `mv <source_path> <target_path>`
-    - Move um arquivo de origem (_source_path_) para o destino (_target_path_)
+**Para executar o shell:**
+Este comando irá compilar (se necessário) e depois iniciar o shell, passando a imagem de disco padrão como argumento.
 
-## Referencias
+```bash
+make run
+```
 
-[The Second Extended File System | Dave Poirier](https://www.nongnu.org/ext2-doc/ext2.html)<br>
-[Design and Implementation of Second Extended Filesystem | Rémy Card, Stephen Tweedie, Theodoro Ts'o](https://e2fsprogs.sourceforge.net/ext2intro.html)<br>
-[The Ext2 Filesystem | Emanuele Altieri, Prof, Nicholas Howe](https://www.science.smith.edu/~nhowe/262/oldlabs/ext2.html)<br>
-[Ext2 Wikipedia | Wikipedia](https://pt.wikipedia.org/wiki/Ext2)<br>
-[C string strtok() function | w3Schools](https://www.w3schools.com/c/ref_string_strtok.php)<br>
-[C Pass Addresses and Pointer | Programiz](https://www.programiz.com/c-programming/c-pointer-functions)<br>
-[Packed Structures | GNU C](https://www.gnu.org/software/c-intro-and-ref/manual/html_node/Packed-Structures.html)<br>
-[Ext2 Tiiks | Michale Meeks](https://github.com/mmeeks/ext2tools)<br>
+**Para limpar os arquivos compilados:**
+Este comando remove o executável e os arquivos objeto.
+
+```bash
+make clean
+```
+
+-----
+
+## Testes e Validação
+
+A imagem pode ser validada com a ferramenta padrão `e2fsck`.
+
+**Para rodar a verificação de integridade:**
+
+```bash
+make verify-ext2
+```
+
+Um ciclo de teste completo envolve a criação e remoção de arquivos e diretórios, seguido pela execução de
+`make verify-ext2` para garantir que nenhuma inconsistência (como "inodes órfãos" ou erros de bitmap) foi introduzida.
+
+-----
+
+## Decisões de Design e Desafios
+
+Durante o desenvolvimento, algumas decisões de engenharia foram tomadas para gerenciar a complexidade e garantir a
+robustez:
+
+* **Parser de Comandos:** Foi implementado um parser manual para a linha de comando que lida com argumentos contendo
+  espaços através de aspas, uma vez que `strtok` se mostrou insuficiente.
+* **Alocação Genérica:** As lógicas para alocação/desalocação de inodes e blocos, que são muito similares, foram
+  abstraídas em funções genéricas `allocate_item` e `deallocate_item` para evitar duplicação de código.
+* **Gerenciamento de Entradas de Diretório:** A função `add_dir_entry` implementa uma estratégia para
+  reutilizar espaços deixados por entradas deletadas, otimizando o uso do espaço no bloco de diretório.
+
+-----
+
+## Autor
+
+* **João Vitor Moraski Lunkes** - [RA: 1904000]
+
+-----
+
+## Licença
+
+Este projeto é distribuído sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
