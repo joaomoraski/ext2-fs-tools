@@ -13,7 +13,7 @@ como o Superbloco, Descritores de Grupo, Tabela de Inodes e Bitmaps.
   * [Funcionalidades Implementadas](#funcionalidades-implementadas)
   * [Estrutura do Projeto](#estrutura-do-projeto)
   * [Como Compilar e Executar](#como-compilar-e-executar)
-  * [Rotina de Testes e Validação](#rotina-de-testes-e-validação)
+  * [Testes e Validação](#testes-e-validação)
   * [Decisões de Design e Desafios](#decisões-de-design-e-desafios)
   * [Autor](#autor)
   * [Licença](#licença)
