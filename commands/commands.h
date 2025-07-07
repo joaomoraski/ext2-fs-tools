@@ -1,5 +1,7 @@
-#ifndef COMMANDS_H
+#ifndef COMMANDS_H // vai garantir de incluir uma unica vez
 #define COMMANDS_H
+// definir um espaço de nome
+// se tiver mais funçoes com o mesmo nome ele nao vai confundir
 
 #include "../ext2-impl/ext2_structs.h"
 
