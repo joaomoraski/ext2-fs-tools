@@ -1075,6 +1075,50 @@ void cmd_rename(ext2_info* fs_info, char* source_name, char* new_name) {
     }
 }
 
+
+void cmd_write(ext2_info* fs_info, char* path) {
+    char path_copy[1024];
+    strcpy(path_copy, path);
+    char filename[1024];
+    unsigned int parent_inode_num = find_parent_inode_and_filename(fs_info, path_copy, filename);
+
+    if (parent_inode_num == 0) {
+        printf("Diretorio pai não existe %s", path);
+        return;
+    }
+
+    strcpy(path_copy, path);
+    unsigned int inode_num = find_inode_number_by_path(fs_info, path_copy);
+
+    inode_struct new_inode;
+    if (inode_num == 0) {
+        unsigned int new_inode_num = allocate_item(fs_info, 'i');
+        new_inode = {0};
+        new_inode.i_mode = EXT2_S_IFREG | EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IRGRP | EXT2_S_IROTH;; // frw-r--r--
+        new_inode.i_links_count = 1;
+        time_t timestamp = time(NULL);
+        new_inode.i_ctime = timestamp;
+        new_inode.i_mtime = timestamp;
+        new_inode.i_atime = timestamp;
+    }
+
+    inode_struct target_inode = read_inode_by_number(fs_info, inode_num);
+
+    // se for 0 bloco cheio se for maior bloco tem espaço
+    unsigned int last_block_index = (target_inode.i_size - 1) / fs_info->block_size;
+    unsigned int offset_last_block = target_inode.i_size % fs_info->block_size;
+
+    char block_buffer[fs_info->block_size];
+
+    long written_bytes = 0;
+    int used_blocks = 0;
+    size_t bytes_read_from_stdin;
+
+    while ((bytes_read_from_stdin = fread(block_buffer, 1, fs_info->block_size, stdin)) > 0) {
+
+    }
+}
+
 // implementação do comando touch para varios arquivos
 // não sei se é o correto, mas fiz apenas um loop dos valores
 void multi_touch(ext2_info* fs_info, char** args, int argc) {

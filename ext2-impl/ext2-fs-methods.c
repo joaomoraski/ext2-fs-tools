@@ -8,6 +8,21 @@
 
 #include "../utils/utils.h"
 
+ext2_info mount_ext2_info() {
+    ext2_info fs_info;
+    int fd;
+    if ((fd = open(IMG_PATH, O_RDWR)) < 0) {
+        perror(IMG_PATH);
+        exit(EXIT_FAILURE);
+    }
+
+    fs_info.fd = fd;
+    load_super_block(&fs_info);
+    load_group_desc(&fs_info);
+    return fs_info;
+}
+
+
 // carrega as informações do superbloco
 void load_super_block(ext2_info* fs_info) {
     // inicializa a struct do super_block

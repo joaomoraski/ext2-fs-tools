@@ -27,6 +27,7 @@ void write_inode_by_number(ext2_info* fs_info, unsigned int inode_number, inode_
 int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned int new_inode_num, char* filename,
                   int file_type, bool commit_changes);
 int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* filename_to_remove);
+ext2_info mount_ext2_info();
 
 
 #endif //EXT2_FS_METHODS_H
