@@ -11,6 +11,7 @@ void cd(ext2_info* fs_info, char* path);
 void attr(ext2_info* fs_info, char* path);
 void cat(ext2_info* fs_info, char* path);
 void touch(ext2_info* fs_info, char* path_to_file);
+void cmd_write(ext2_info* fs_info, char* path);
 void cmd_mkdir(ext2_info* fs_info, char* path);
 void multi_touch(ext2_info* fs_info, char** args, int argc);
 void multi_cmd_mkdir(ext2_info* fs_info, char** args, int argc);

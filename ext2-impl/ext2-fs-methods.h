@@ -27,6 +27,9 @@ void write_inode_by_number(ext2_info* fs_info, unsigned int inode_number, inode_
 int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned int new_inode_num, char* filename,
                   int file_type, bool commit_changes);
 int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* filename_to_remove);
+unsigned int get_block_number_by_index(ext2_info* fs_info, inode_struct* target_inode, unsigned int index);
+unsigned int save_buffer_and_register_block(ext2_info* fs_info, inode_struct* target_inode, char* block_buffer,
+                                            unsigned int block_index);
 ext2_info mount_ext2_info();
 
 

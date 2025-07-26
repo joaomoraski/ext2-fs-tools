@@ -1079,72 +1079,103 @@ void cmd_rename(ext2_info* fs_info, char* source_name, char* new_name) {
 void cmd_write(ext2_info* fs_info, char* path) {
     char path_copy[1024];
     strcpy(path_copy, path);
-    char filename[1024];
-    unsigned int parent_inode_num = find_parent_inode_and_filename(fs_info, path_copy, filename);
-
-    if (parent_inode_num == 0) {
-        printf("Diretorio pai não existe %s", path);
-        return;
-    }
+    char filename[256];
+    unsigned int parent_inode_num = find_parent_inode_and_filename(fs_info, path, filename);
+    if (parent_inode_num == 0) return;
 
     strcpy(path_copy, path);
     unsigned int inode_num = find_inode_number_by_path(fs_info, path_copy);
 
-    inode_struct new_inode;
-    if (inode_num == 0) {
-        unsigned int new_inode_num = allocate_item(fs_info, 'i');
-        new_inode = {0};
-        new_inode.i_mode = EXT2_S_IFREG | EXT2_S_IRUSR | EXT2_S_IWUSR | EXT2_S_IRGRP | EXT2_S_IROTH;; // frw-r--r--
-        new_inode.i_links_count = 1;
-        time_t timestamp = time(NULL);
-        new_inode.i_ctime = timestamp;
-        new_inode.i_mtime = timestamp;
-        new_inode.i_atime = timestamp;
+    inode_struct target_inode;
+    bool is_new_file = false;
+
+    if (inode_num == 0) { // arquivo novo
+        is_new_file = true;
+        inode_num = allocate_item(fs_info, 'i');
+        if (inode_num == 0) return;
+        memset(&target_inode, 0, sizeof(inode_struct));
+        target_inode.i_mode = EXT2_S_IFREG | 0644; // rw-r--r--
+        target_inode.i_links_count = 1;
+        target_inode.i_ctime = time(NULL);
+    } else { // arquivo ja existe
+        target_inode = read_inode_by_number(fs_info, inode_num);
     }
-
-    inode_struct target_inode = read_inode_by_number(fs_info, inode_num);
-
-    // se for 0 bloco cheio se for maior bloco tem espaço
-    unsigned int last_block_index = (target_inode.i_size - 1) / fs_info->block_size;
-    unsigned int offset_last_block = target_inode.i_size % fs_info->block_size;
 
     char block_buffer[fs_info->block_size];
+    unsigned int buffer_cursor = target_inode.i_size % fs_info->block_size;
 
-    long written_bytes = 0;
-    int used_blocks = 0;
+    if (buffer_cursor > 0) { // bloco esta parcialmente preenchido
+        int last_block_idx = (target_inode.i_size - 1) / fs_info->block_size;
+        int last_block_num = get_block_number_by_index(fs_info, &target_inode, last_block_idx);
+        read_data_block(fs_info, last_block_num, block_buffer, fs_info->block_size);
+    } else { // bloco novo
+        memset(block_buffer, 0, fs_info->block_size);
+    }
+
+    char stdin_buffer[1024];
     size_t bytes_read_from_stdin;
 
-    while ((bytes_read_from_stdin = fread(block_buffer, 1, fs_info->block_size, stdin)) > 0) {
+    while ((bytes_read_from_stdin = fread(stdin_buffer, 1, sizeof(stdin_buffer), stdin)) > 0) {
+        for (int i = 0; i < bytes_read_from_stdin; i++) {
+            // copia um byte da entrada para o buffer
+            block_buffer[buffer_cursor] = stdin_buffer[i];
+            buffer_cursor++;
+            target_inode.i_size++; // tamanho total do arquivo cresce a cada byte
 
+            // Se o buffer de montagem encheu...
+            if (buffer_cursor == fs_info->block_size) {
+                int blocos_alocados_ate_agora = (target_inode.i_size - 1) / fs_info->block_size;
+                save_buffer_and_register_block(fs_info, &target_inode, block_buffer, blocos_alocados_ate_agora);
+
+                buffer_cursor = 0; // zera o cursor para começar a encher de novo
+                memset(block_buffer, 0, fs_info->block_size);
+            }
+        }
     }
+
+    if (buffer_cursor > 0) {
+        int blocos_alocados_ate_agora = (target_inode.i_size + fs_info->block_size - 1) / fs_info->block_size;
+        if (target_inode.i_size == 0) blocos_alocados_ate_agora = 0;
+        else blocos_alocados_ate_agora--;
+
+        save_buffer_and_register_block(fs_info, &target_inode, block_buffer, blocos_alocados_ate_agora);
+    }
+
+    // atualiza a contabilidade final do inode
+    int num_fs_blocks = (target_inode.i_size + fs_info->block_size - 1) / fs_info->block_size;
+    if (target_inode.i_size == 0) num_fs_blocks = 0;
+
+    target_inode.i_blocks = num_fs_blocks * (fs_info->block_size / 512);
+    target_inode.i_mtime = time(NULL);
+    target_inode.i_atime = target_inode.i_mtime;
+
+    write_inode_by_number(fs_info, inode_num, &target_inode);
+
+    // Se era um arquivo novo, adiciona a entrada no diretório pai
+    if (is_new_file) {
+        add_dir_entry(fs_info, parent_inode_num, inode_num, filename, EXT2_FT_REG_FILE, true);
+    }
+    printf("Escrita concluída. Total de %u bytes no arquivo.\n", target_inode.i_size);
 }
 
-// implementação do comando touch para varios arquivos
-// não sei se é o correto, mas fiz apenas um loop dos valores
 void multi_touch(ext2_info* fs_info, char** args, int argc) {
     for (int i = 1; i < argc; ++i) {
         touch(fs_info, args[i]);
     }
 }
 
-// implementação do comando mkdir para varios arquivos
-// não sei se é o correto, mas fiz apenas um loop dos valores
 void multi_cmd_mkdir(ext2_info* fs_info, char** args, int argc) {
     for (int i = 1; i < argc; ++i) {
         cmd_mkdir(fs_info, args[i]);
     }
 }
 
-// implementação do comando rm para varios arquivos
-// não sei se é o correto, mas fiz apenas um loop dos valores
 void multi_rm(ext2_info* fs_info, char** args, int argc) {
     for (int i = 1; i < argc; ++i) {
         rm(fs_info, args[i]);
     }
 }
 
-// implementação do comando rmdir para varios arquivos
-// não sei se é o correto, mas fiz apenas um loop dos valores
 void multi_cmd_rmdir(ext2_info* fs_info, char** args, int argc) {
     for (int i = 1; i < argc; ++i) {
         cmd_rmdir(fs_info, args[i]);

@@ -130,6 +130,12 @@ int main(int argc, char* argv[]) {
                 } else {
                     printf("touch: falta operando.\n");
                 }
+            } else if (strcmp(args[0], "write") == 0) {
+                if (argc == 2) {
+                    cmd_write(&fs_info, args[1]);
+                } else {
+                    printf("write: falta operando.\n");
+                }
             } else if (strcmp(args[0], "mkdir") == 0) {
                 if (argc == 2) {
                     cmd_mkdir(&fs_info, args[1]);

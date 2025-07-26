@@ -535,3 +535,110 @@ bool verify_file_exists(ext2_info* fs_info, unsigned int i_block, char* filename
     }
     return false;
 }
+
+
+unsigned int get_block_number_by_index(ext2_info* fs_info, inode_struct* target_inode, unsigned int index) {
+    if (index < 12) {
+        return target_inode->i_block[index];
+    }
+    if (index < 12 + 256) {
+        if (target_inode->i_block[12] == 0) return 0;
+        unsigned int indirect_pointers[256];
+        read_data_block(fs_info, target_inode->i_block[12], (char*)indirect_pointers, sizeof(indirect_pointers));
+        int indirect_block_index = index - 12;
+        return indirect_pointers[indirect_block_index];
+    }
+    if (target_inode->i_block[13] == 0) return 0;
+    unsigned int l1_indirect_pointers[256];
+    read_data_block(fs_info, target_inode->i_block[13], (char*)l1_indirect_pointers, sizeof(l1_indirect_pointers));
+    int adjust_index = index - (12 + 256);
+    unsigned int l2_block_index = l1_indirect_pointers[adjust_index / 256];
+    if (l2_block_index == 0) return 0;
+    unsigned int l2_indirect_pointers[256];
+    read_data_block(fs_info, l2_block_index, (char*)l2_indirect_pointers, sizeof(l2_indirect_pointers));
+    return l2_indirect_pointers[adjust_index % 256];
+}
+
+unsigned int save_buffer_and_register_block(ext2_info* fs_info, inode_struct* target_inode, char* block_buffer,
+                                            unsigned int block_index) {
+    unsigned int existent_block_num = get_block_number_by_index(fs_info, target_inode, block_index);
+
+    // se não existe aloca um novo
+    if (existent_block_num == 0) {
+        existent_block_num = allocate_item(fs_info, 'b');
+        if (existent_block_num == 0) {
+            printf("Erro fatal: Falha ao alocar bloco de dados. Disco pode estar cheio.\n");
+            return 0;
+        }
+
+        // blocos Diretos
+        if (block_index < 12) {
+            target_inode->i_block[block_index] = existent_block_num;
+        }
+        // Bloco Indireto Simples
+        else if (block_index < 12 + 256) {
+            unsigned int indirect_block_num = target_inode->i_block[12];
+            unsigned int indirect_pointers[256];
+
+            // se o bloco de ponteiros indiretos ainda não existe, cria ele.
+            if (indirect_block_num == 0) {
+                indirect_block_num = allocate_item(fs_info, 'b');
+                if (indirect_block_num == 0) return 0; // falhou em alocar o bloco de ponteiros
+                target_inode->i_block[12] = indirect_block_num;
+                memset(indirect_pointers, 0, sizeof(indirect_pointers)); // limpa o buffer de ponteiros
+            } else {
+                // se ja existe, le ele do disco para a memória.
+                read_data_block(fs_info, indirect_block_num, (char*)indirect_pointers, fs_info->block_size);
+            }
+
+            int index_no_bloco = block_index - 12;
+            indirect_pointers[index_no_bloco] = existent_block_num;
+
+            // salva a lista de ponteiros atualizada de volta no disco.
+            point_and_write(fs_info->fd, indirect_block_num * fs_info->block_size, SEEK_SET, (char*)indirect_pointers,
+                            fs_info->block_size);
+        }
+        // Bloco Indireto Duplo
+        else if (block_index < 12 + 256 + (256 * 256)) {
+            unsigned int l1_block_num = target_inode->i_block[13];
+            unsigned int l1_pointers[256];
+
+            if (l1_block_num == 0) {
+                l1_block_num = allocate_item(fs_info, 'b');
+                if (l1_block_num == 0) return 0;
+                target_inode->i_block[13] = l1_block_num;
+                memset(l1_pointers, 0, sizeof(l1_pointers));
+            } else {
+                read_data_block(fs_info, l1_block_num, (char*)l1_pointers, fs_info->block_size);
+            }
+
+            int adjuted_index = block_index - (12 + 256);
+            int l1_index = adjuted_index / 256;
+            int l2_index = adjuted_index % 256;
+
+            unsigned int l2_block_num = l1_pointers[l1_index];
+            unsigned int l2_pointers[256];
+
+            if (l2_block_num == 0) {
+                l2_block_num = allocate_item(fs_info, 'b');
+                if (l2_block_num == 0) return 0;
+                l1_pointers[l1_index] = l2_block_num;
+                point_and_write(fs_info->fd, l1_block_num * fs_info->block_size, SEEK_SET, (char*)l1_pointers,
+                                fs_info->block_size);
+                memset(l2_pointers, 0, sizeof(l2_pointers));
+            } else {
+                read_data_block(fs_info, l2_block_num, (char*)l2_pointers, fs_info->block_size);
+            }
+
+            l2_pointers[l2_index] = existent_block_num;
+            point_and_write(fs_info->fd, l2_block_num * fs_info->block_size, SEEK_SET, (char*)l2_pointers,
+                            fs_info->block_size);
+        } else {
+            printf("Erro: Arquivo muito grande, escrita em blocos indiretos triplos não suportada.\n");
+            return 0;
+        }
+    }
+    point_and_write(fs_info->fd, existent_block_num * fs_info->block_size, SEEK_SET, block_buffer, fs_info->block_size);
+
+    return 1; // Sucesso
+}
