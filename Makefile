@@ -15,6 +15,9 @@ all:
 run: all
 	./$(TARGET)
 
+run-go: all
+	./$(TARGET) db teste.txt
+
 clean:
 	rm -f $(TARGET) .ext2_shell_history
 

@@ -30,6 +30,12 @@ int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* fi
 unsigned int get_block_number_by_index(ext2_info* fs_info, inode_struct* target_inode, unsigned int index);
 unsigned int save_buffer_and_register_block(ext2_info* fs_info, inode_struct* target_inode, char* block_buffer,
                                             unsigned int block_index);
+void append_stream_to_file(ext2_info* fs_info, inode_struct* target_inode, unsigned int stdin_buffer_size);
+void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
+                      long* bytes_read);
+void write_data_block_out(ext2_info* fs_info, unsigned int block_number, char block_buffer[], long total_length,
+                          long* bytes_read, FILE* target_file);
+void parse_and_print_records(char* block_buffer, int bytes_in_buffer, long* total_bytes_to_read, int record_size, int* limit_counter);
 ext2_info mount_ext2_info();
 
 

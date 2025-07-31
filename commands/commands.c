@@ -11,9 +11,6 @@
 #include "../ext2-impl/ext2-fs-methods.h"
 #include "../ext2-impl/ext2_structs.h"
 
-void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
-                      long* bytes_read);
-
 // função para o comando info
 // printa as principais informações do superbloco
 void info(ext2_info fs_info) {
@@ -349,31 +346,23 @@ void cat(ext2_info* fs_info, char* path) {
         return;
     }
 
-    // calcula o tamanho total e o numero de dados lidos
     long total_length = inode.i_size;
     long bytes_read = 0;
 
-    // block buffer do tamanho do bloco
     char block_buffer[fs_info->block_size];
 
-    // variavel de controle de leitura
     bool read_done = false;
 
     // apenas lidando com 12 entradas
     // 13 e 14 sao ponteiros indiretos
     for (int i = 0; i < 12; ++i) {
-        // pega o numero do bloco na posição i
         unsigned int block_number = inode.i_block[i];
 
-        // previnir de printar lixo de memoria
-        // não tem mais blocos de dados, ou esta com algum problema
         if (block_number == 0) continue;
 
         // função para printar as informações do bloco de dados
         print_data_block(fs_info, block_number, block_buffer, &total_length, &bytes_read);
 
-        // se o total de lidos for maior ou igual ao tamanho total, sai do loop
-        // e seta a variavel para indicar que ja acabou de ler
         if (bytes_read >= total_length) {
             read_done = true;
             break;
@@ -389,14 +378,12 @@ void cat(ext2_info* fs_info, char* path) {
         unsigned int pointers_block[256];
         read_data_block(fs_info, inode.i_block[12], (char*)pointers_block, fs_info->block_size);
 
-        // loop pelos ponteiros lidos
         for (int i = 0; i < 256; i++) {
             unsigned int block_number = pointers_block[i];
             if (block_number == 0) continue; // ignora este bloco
 
             print_data_block(fs_info, block_number, block_buffer, &total_length, &bytes_read);
 
-            // seta a variavel para indicar que ja acabou de ler
             if (bytes_read >= total_length) {
                 read_done = true;
                 break;
@@ -417,26 +404,21 @@ void cat(ext2_info* fs_info, char* path) {
         for (int i = 0; i < 256; i++) {
             if (lv1_pointers[i] == 0) continue;
 
-            // le o segundo bloco de ponteiros
-            // ponteiros de lv 2
             unsigned int lv2_pointers[256];
             read_data_block(fs_info, lv1_pointers[i], (char*)lv2_pointers, fs_info->block_size);
 
-            // loop no segundo level de ponteiros, que apontam para dados
             for (int j = 0; j < 256; j++) {
                 unsigned int block_number = lv2_pointers[j];
                 if (block_number == 0) continue;
 
                 print_data_block(fs_info, block_number, block_buffer, &total_length, &bytes_read);
 
-                // seta a variavel para indicar que ja acabou de ler
                 if (bytes_read >= total_length) {
                     read_done = true;
                     break;
                 }
             }
 
-            // se terminou de ler sai do for de cima
             if (read_done) {
                 break;
             }
@@ -449,45 +431,6 @@ void cat(ext2_info* fs_info, char* path) {
     // mas para arquivos de até 64MB, o indireto duplo já é suficiente.
     printf("\n");
     fflush(stdout); // garante a impressão total na tela antes de seguir
-}
-
-void write_data_block_out(ext2_info* fs_info, unsigned int block_number, char block_buffer[], long total_length,
-                          long* bytes_read, FILE* target_file) {
-    // le o data block
-    read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
-    // evitar copiar lixo de memoria
-    // calcular quantos bytes ainda faltam para ser copiado
-    long remaining_bytes = total_length - *bytes_read;
-
-    // decide quantos bytes escrever do bloco atual
-    int bytes_to_write = (remaining_bytes < fs_info->block_size) ? remaining_bytes : fs_info->block_size;
-    // se o que falta é menor que o bloco, escreve so o que falta
-    // se não, escreve o bloco inteiro
-
-    // usar fwrite por que ele imprime os dados brutos(binarios)
-    // não para em \0
-    fwrite(block_buffer, 1, bytes_to_write, target_file);
-    *bytes_read += bytes_to_write;
-}
-
-// função para facilitar a impressão na tela, ja repetida em 3 lugares diferentes
-void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
-                      long* bytes_read) {
-    // le o data block
-    read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
-    // evitar printar lixo de memoria
-    // calcular quantos bytes ainda faltam para ser lido o arquivo todo
-    long remaining_bytes = total_length - bytes_read;
-
-    // decide quantos bytes imprimir do bloco atual
-    int bytes_to_print = (remaining_bytes < fs_info->block_size) ? remaining_bytes : fs_info->block_size;
-    // se o que falta é menor que o bloco, imprime so o que falta
-    // se não, imprime o bloco inteiro
-
-    // usar fwrite por que ele imprime os dados brutos(binarios)
-    // não para em \0
-    fwrite(block_buffer, 1, bytes_to_print, stdout);
-    bytes_read += bytes_to_print;
 }
 
 // comando touch
@@ -589,7 +532,7 @@ void cmd_mkdir(ext2_info* fs_info, char* path_to_file) {
 
     // verificar se o bloco possui espaço para a alocação de novas coisas
     bool has_space = add_dir_entry(fs_info, parent_inode_number, 0, new_dir_name,
-        0, false);
+                                   0, false);
     if (!has_space) {
         // print de erro ja esta la dentro
         return;
@@ -1101,53 +1044,7 @@ void cmd_write(ext2_info* fs_info, char* path) {
         target_inode = read_inode_by_number(fs_info, inode_num);
     }
 
-    char block_buffer[fs_info->block_size];
-    unsigned int buffer_cursor = target_inode.i_size % fs_info->block_size;
-
-    if (buffer_cursor > 0) { // bloco esta parcialmente preenchido
-        int last_block_idx = (target_inode.i_size - 1) / fs_info->block_size;
-        int last_block_num = get_block_number_by_index(fs_info, &target_inode, last_block_idx);
-        read_data_block(fs_info, last_block_num, block_buffer, fs_info->block_size);
-    } else { // bloco novo
-        memset(block_buffer, 0, fs_info->block_size);
-    }
-
-    char stdin_buffer[1024];
-    size_t bytes_read_from_stdin;
-
-    while ((bytes_read_from_stdin = fread(stdin_buffer, 1, sizeof(stdin_buffer), stdin)) > 0) {
-        for (int i = 0; i < bytes_read_from_stdin; i++) {
-            // copia um byte da entrada para o buffer
-            block_buffer[buffer_cursor] = stdin_buffer[i];
-            buffer_cursor++;
-            target_inode.i_size++; // tamanho total do arquivo cresce a cada byte
-
-            // Se o buffer de montagem encheu...
-            if (buffer_cursor == fs_info->block_size) {
-                int blocos_alocados_ate_agora = (target_inode.i_size - 1) / fs_info->block_size;
-                save_buffer_and_register_block(fs_info, &target_inode, block_buffer, blocos_alocados_ate_agora);
-
-                buffer_cursor = 0; // zera o cursor para começar a encher de novo
-                memset(block_buffer, 0, fs_info->block_size);
-            }
-        }
-    }
-
-    if (buffer_cursor > 0) {
-        int blocos_alocados_ate_agora = (target_inode.i_size + fs_info->block_size - 1) / fs_info->block_size;
-        if (target_inode.i_size == 0) blocos_alocados_ate_agora = 0;
-        else blocos_alocados_ate_agora--;
-
-        save_buffer_and_register_block(fs_info, &target_inode, block_buffer, blocos_alocados_ate_agora);
-    }
-
-    // atualiza a contabilidade final do inode
-    int num_fs_blocks = (target_inode.i_size + fs_info->block_size - 1) / fs_info->block_size;
-    if (target_inode.i_size == 0) num_fs_blocks = 0;
-
-    target_inode.i_blocks = num_fs_blocks * (fs_info->block_size / 512);
-    target_inode.i_mtime = time(NULL);
-    target_inode.i_atime = target_inode.i_mtime;
+    append_stream_to_file(fs_info, &target_inode, fs_info->block_size);
 
     write_inode_by_number(fs_info, inode_num, &target_inode);
 

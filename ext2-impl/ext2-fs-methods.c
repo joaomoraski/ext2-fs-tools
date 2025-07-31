@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "../entities_struct/entities.h"
 #include "../utils/utils.h"
 
 ext2_info mount_ext2_info() {
@@ -641,4 +642,110 @@ unsigned int save_buffer_and_register_block(ext2_info* fs_info, inode_struct* ta
     point_and_write(fs_info->fd, existent_block_num * fs_info->block_size, SEEK_SET, block_buffer, fs_info->block_size);
 
     return 1; // Sucesso
+}
+
+void write_data_block_out(ext2_info* fs_info, unsigned int block_number, char block_buffer[], long total_length,
+                          long* bytes_read, FILE* target_file) {
+    // le o data block
+    read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
+    // evitar copiar lixo de memoria
+    // calcular quantos bytes ainda faltam para ser copiado
+    long remaining_bytes = total_length - *bytes_read;
+
+    // decide quantos bytes escrever do bloco atual
+    int bytes_to_write = (remaining_bytes < fs_info->block_size) ? remaining_bytes : fs_info->block_size;
+    // se o que falta é menor que o bloco, escreve so o que falta
+    // se não, escreve o bloco inteiro
+
+    // usar fwrite por que ele imprime os dados brutos(binarios)
+    // não para em \0
+    fwrite(block_buffer, 1, bytes_to_write, target_file);
+    *bytes_read += bytes_to_write;
+}
+
+// função para facilitar a impressão na tela, ja repetida em 3 lugares diferentes
+void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
+                      long* bytes_read) {
+    read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
+    // evitar printar lixo de memoria
+    // calcular quantos bytes ainda faltam para ser lido o arquivo
+    long remaining_bytes = total_length - bytes_read;
+
+    // decide quantos bytes imprimir do bloco atual
+    int bytes_to_print = (remaining_bytes < fs_info->block_size) ? remaining_bytes : fs_info->block_size;
+    // se o que falta é menor que o bloco, imprime so o que falta
+    // se não, imprime o bloco inteiro
+
+    // usar fwrite por que ele imprime os dados brutos(binarios)
+    // não para em \0
+    fwrite(block_buffer, 1, bytes_to_print, stdout);
+    bytes_read += bytes_to_print;
+}
+
+void parse_and_print_records(char* block_buffer, int bytes_in_buffer, long* total_bytes_to_read, int record_size,
+                             int* limit_counter) {
+    for (int offset = 0; offset < bytes_in_buffer; offset += record_size) {
+        if (*total_bytes_to_read <= 0 || *limit_counter <= 0) break;
+
+        UserRecord* current_record = (UserRecord*)(block_buffer + offset);
+
+        if (current_record->id != 0) {
+            printf("ID: %u | Ativo: %c | User: %s | Email: %s\n",
+                   current_record->id,
+                   current_record->is_active,
+                   current_record->username,
+                   current_record->email);
+
+            if (*limit_counter > 0) (*limit_counter)--;
+        }
+
+        (*total_bytes_to_read) -= record_size;
+    }
+}
+
+void append_stream_to_file(ext2_info* fs_info, inode_struct* target_inode, unsigned int stdin_buffer_size) {
+    char block_buffer[fs_info->block_size];
+    unsigned int buffer_cursor = target_inode->i_size % fs_info->block_size;
+
+    if (buffer_cursor > 0) { // bloco esta parcialmente preenchido
+        int last_block_idx = (target_inode->i_size - 1) / fs_info->block_size;
+        int last_block_num = get_block_number_by_index(fs_info, target_inode, last_block_idx);
+        read_data_block(fs_info, last_block_num, block_buffer, fs_info->block_size);
+    } else { // bloco novo
+        memset(block_buffer, 0, fs_info->block_size);
+    }
+
+    char stdin_buffer[stdin_buffer_size];
+    size_t bytes_read_from_stdin;
+
+    while ((bytes_read_from_stdin = fread(stdin_buffer, 1, sizeof(stdin_buffer), stdin)) > 0) {
+        for (int i = 0; i < bytes_read_from_stdin; i++) {
+            block_buffer[buffer_cursor] = stdin_buffer[i];
+            buffer_cursor++;
+            target_inode->i_size++;
+
+            if (buffer_cursor == fs_info->block_size) {
+                int blocos_alocados_ate_agora = (target_inode->i_size - 1) / fs_info->block_size;
+                save_buffer_and_register_block(fs_info, target_inode, block_buffer, blocos_alocados_ate_agora);
+
+                buffer_cursor = 0;
+                memset(block_buffer, 0, fs_info->block_size);
+            }
+        }
+    }
+
+    if (buffer_cursor > 0) {
+        int used_blocks_now = (target_inode->i_size + fs_info->block_size - 1) / fs_info->block_size;
+        if (target_inode->i_size == 0) used_blocks_now = 0;
+        else used_blocks_now--;
+
+        save_buffer_and_register_block(fs_info, target_inode, block_buffer, used_blocks_now);
+    }
+
+    int num_fs_blocks = (target_inode->i_size + fs_info->block_size - 1) / fs_info->block_size;
+    if (target_inode->i_size == 0) num_fs_blocks = 0;
+
+    target_inode->i_blocks = num_fs_blocks * (fs_info->block_size / 512);
+    target_inode->i_mtime = time(NULL);
+    target_inode->i_atime = target_inode->i_mtime;
 }

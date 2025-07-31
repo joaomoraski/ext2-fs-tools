@@ -36,8 +36,12 @@ void save_history_on_shutdown() {
 int main(int argc, char* argv[]) {
     ext2_info fs_info = mount_ext2_info();
 
+    if (argc > 1 && strcmp(argv[1], "db") == 0) {
+        printf("db: %d", argc);
+        cmd_write(&fs_info, argv[2]);
 
-    if (argc == 3 && strcmp(argv[1], "write") == 0) {
+        // strcmp(argv[2], "db") == 0 insert select select_where
+        // strcmp(argv[3], "db") ==
         // iniciar modo de escrita
     } else {
         signal(SIGINT, save_history_on_shutdown);
