@@ -11,6 +11,7 @@ Created by https://www.toptal.com/developers/gitignore/api/clion+all,visualstudi
 .idea/**/usage.statistics.xml
 .idea/**/dictionaries
 .idea/**/shelf
+ext2shell.dSYM/
 
 .ext2_shell_history
 ext2shell
