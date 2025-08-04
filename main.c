@@ -36,24 +36,24 @@ void save_history_on_shutdown() {
 
 int main(int argc, char* argv[]) {
     // Cria a struct e preenche com dados de teste
-    UserRecord user = {0}; // O {0} limpa a struct inteira com zeros
-
-    user.id = 1234;
-    user.is_active = '0'; // '1' para true, '0' para false
-    strncpy(user.username, "moraski-inativo", sizeof(user.username) - 1);
-    strncpy(user.email, "moraski-inativo@teste.com", sizeof(user.email) - 1);
-
-    // Abre um arquivo binário para escrita
-    FILE *f = fopen("record.bin", "wb");
-    if (f == NULL) {
-        perror("Erro ao criar arquivo de registro");
-        return 1;
-    }
-
-    // Escreve os 64 bytes da struct no arquivo
-    fwrite(&user, sizeof(UserRecord), 1, f);
-
-    fclose(f);
+    // UserRecord user = {0}; // O {0} limpa a struct inteira com zeros
+    //
+    // user.id = 1234;
+    // user.is_active = '0'; // '1' para true, '0' para false
+    // strncpy(user.username, "moraski-inativo", sizeof(user.username) - 1);
+    // strncpy(user.email, "moraski-inativo@teste.com", sizeof(user.email) - 1);
+    //
+    // // Abre um arquivo binário para escrita
+    // FILE *f = fopen("record.bin", "wb");
+    // if (f == NULL) {
+    //     perror("Erro ao criar arquivo de registro");
+    //     return 1;
+    // }
+    //
+    // // Escreve os 64 bytes da struct no arquivo
+    // fwrite(&user, sizeof(UserRecord), 1, f);
+    //
+    // fclose(f);
 
     ext2_info fs_info = mount_ext2_info();
 
