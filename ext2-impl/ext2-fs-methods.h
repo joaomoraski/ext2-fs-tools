@@ -11,6 +11,7 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include "../entities_struct/metadata-dict.h"
 #include <stdlib.h>
 
 
@@ -36,6 +37,8 @@ void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block
 void write_data_block_out(ext2_info* fs_info, unsigned int block_number, char block_buffer[], long total_length,
                           long* bytes_read, FILE* target_file);
 void parse_and_print_records(char* block_buffer, int bytes_in_buffer, long* total_bytes_to_read, int record_size, int* limit_counter);
+void parse_and_print_records_where(char *block_buffer, int bytes_in_buffer, long *total_bytes_to_read, int record_size,
+                                   int *limit_counter, const FieldMetadata *field_metadata, char *value, char* operator);
 ext2_info mount_ext2_info();
 
 

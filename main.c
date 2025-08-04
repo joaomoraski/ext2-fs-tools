@@ -15,6 +15,7 @@
 #include "ext2-impl/ext2-fs-methods.h"
 #include "commands/commands.h"
 #include "utils/utils.h"
+#include "db-action/actions.h"
 
 #define HISTORY_FILE ".ext2_shell_history"
 #define MAX_INPUT 1024
@@ -34,15 +35,36 @@ void save_history_on_shutdown() {
 }
 
 int main(int argc, char* argv[]) {
+    // Cria a struct e preenche com dados de teste
+    UserRecord user = {0}; // O {0} limpa a struct inteira com zeros
+
+    user.id = 1234;
+    user.is_active = '0'; // '1' para true, '0' para false
+    strncpy(user.username, "moraski-inativo", sizeof(user.username) - 1);
+    strncpy(user.email, "moraski-inativo@teste.com", sizeof(user.email) - 1);
+
+    // Abre um arquivo binário para escrita
+    FILE *f = fopen("record.bin", "wb");
+    if (f == NULL) {
+        perror("Erro ao criar arquivo de registro");
+        return 1;
+    }
+
+    // Escreve os 64 bytes da struct no arquivo
+    fwrite(&user, sizeof(UserRecord), 1, f);
+
+    fclose(f);
+
     ext2_info fs_info = mount_ext2_info();
 
     if (argc > 1 && strcmp(argv[1], "db") == 0) {
-        printf("db: %d", argc);
-        cmd_write(&fs_info, argv[2]);
-
-        // strcmp(argv[2], "db") == 0 insert select select_where
-        // strcmp(argv[3], "db") ==
-        // iniciar modo de escrita
+        if (strcmp(argv[2], "insert") == 0) {
+            db_insert(&fs_info, argv[3]);
+        } else if (strcmp(argv[2], "select") == 0) {
+            db_select_all(&fs_info, argv[3], atoi(argv[4]));
+        } else if (strcmp(argv[2], "select-where") == 0) {
+            db_select_where(&fs_info, argv[3], argv[4], atoi(argv[5]));
+        }
     } else {
         signal(SIGINT, save_history_on_shutdown);
         signal(SIGTERM, save_history_on_shutdown);

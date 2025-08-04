@@ -5,8 +5,10 @@
 
 #include <stdbool.h>
 #include <string.h>
+#include <time.h>
 
 #include "../entities_struct/entities.h"
+#include "../entities_struct/metadata-dict.h"
 #include "../utils/utils.h"
 
 ext2_info mount_ext2_info() {
@@ -25,7 +27,7 @@ ext2_info mount_ext2_info() {
 
 
 // carrega as informações do superbloco
-void load_super_block(ext2_info* fs_info) {
+void load_super_block(ext2_info *fs_info) {
     // inicializa a struct do super_block
     super_block super_block;
 
@@ -49,7 +51,7 @@ void load_super_block(ext2_info* fs_info) {
 }
 
 // carrega as informações dos descritores de grupo
-void load_group_desc(ext2_info* fs_info) {
+void load_group_desc(ext2_info *fs_info) {
     // cria o aux de numeros de bloco e blocos por grupo, -1 para melhorar na divisao abaixo
     // C sempre arredonda pra baixo, podendo causar inconsistencia
     unsigned int aux = fs_info->sb.s_blocks_count + fs_info->sb.s_blocks_per_group - 1;
@@ -58,7 +60,7 @@ void load_group_desc(ext2_info* fs_info) {
     fs_info->num_block_groups = aux / fs_info->sb.s_blocks_per_group;
 
     // alocar a memoria para os descritores de grupo
-    fs_info->group_desc_array = (group_desc*)malloc(fs_info->num_block_groups * sizeof(group_desc));
+    fs_info->group_desc_array = (group_desc *) malloc(fs_info->num_block_groups * sizeof(group_desc));
     // indicar que deu ruim
     if (fs_info->group_desc_array == NULL) {
         perror("Failed to allocate memory for group descriptors");
@@ -78,7 +80,7 @@ void load_group_desc(ext2_info* fs_info) {
     strcpy(fs_info->current_path, "/");
 }
 
-inode_struct read_inode_by_number(ext2_info* fs_info, unsigned int inode_number) {
+inode_struct read_inode_by_number(ext2_info *fs_info, unsigned int inode_number) {
     // divide o numero do inode pelo numero de inodes por grupo para saber me qual grupo esta
     int group = (inode_number - 1) / fs_info->sb.s_inodes_per_group;
     // pega o descritor do grupo que o inode esta
@@ -101,7 +103,7 @@ inode_struct read_inode_by_number(ext2_info* fs_info, unsigned int inode_number)
 }
 
 // funcao auxiliar para evitar repetiçao de codigo
-void write_inode_by_number(ext2_info* fs_info, unsigned int inode_number, inode_struct* new_inode) {
+void write_inode_by_number(ext2_info *fs_info, unsigned int inode_number, inode_struct *new_inode) {
     // divide o numero do inode pelo numero de inodes por grupo para saber me qual grupo esta
     int group = (inode_number - 1) / fs_info->sb.s_inodes_per_group;
     // pega o descritor do grupo que o inode esta
@@ -121,8 +123,9 @@ void write_inode_by_number(ext2_info* fs_info, unsigned int inode_number, inode_
 
 // adiciona uma nova dir entry no datablock do inode "pai"
 // tem a variavel commit_changes para ter um dry-run, usado para verificar se tem tamanho para adicionar
-int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned int new_inode_num, char* filename,
-                  int file_type, bool commit_changes) { // vlw magalu pelo commit_changes
+int add_dir_entry(ext2_info *fs_info, unsigned int parent_inode_num, unsigned int new_inode_num, char *filename,
+                  int file_type, bool commit_changes) {
+    // vlw magalu pelo commit_changes
     // le o inode "pai" pelo numero passado
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_num);
 
@@ -135,11 +138,11 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
     int required_size_for_new_entry = (8 + strlen(filename) + 3) & ~3;
 
     // coloca o ponteiro para a posiçao inicial do block_buffer
-    char* pointer = block_buffer;
+    char *pointer = block_buffer;
     int bytes_read = 0;
 
     while (bytes_read < fs_info->block_size) {
-        dir_entry* current_entry = (dir_entry*)pointer;
+        dir_entry *current_entry = (dir_entry *) pointer;
 
         // calcula o tamanho que a entrada atual precisa de verdade
         // 8 fixo + tamanho e arredonda pra 4
@@ -160,7 +163,7 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
             current_entry->rec_len = real_size_of_current_entry;
 
             // 2. avança o ponteiro para o começo do espaço livre novo
-            char* new_entry_pointer = pointer + current_entry->rec_len;
+            char *new_entry_pointer = pointer + current_entry->rec_len;
 
             // Como esta aproveitando buracos, é necessario limpar o "buraco" por completo
             // isso pq, se a entrada nova for menor que o tamanho total do buraco, ele pode corromper algo
@@ -168,7 +171,7 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
             memset(new_entry_pointer, 0, original_rec_len - real_size_of_current_entry);
 
             // criar a nova entrada
-            dir_entry* new_entry = (dir_entry*)new_entry_pointer;
+            dir_entry *new_entry = (dir_entry *) new_entry_pointer;
             new_entry->inode = new_inode_num;
             new_entry->name_len = strlen(filename);
             memcpy(new_entry->name, filename, new_entry->name_len);
@@ -200,7 +203,7 @@ int add_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, unsigned in
 
 
 // remove uma dir entry no datablock do inode "pai"
-int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* filename_to_remove) {
+int remove_dir_entry(ext2_info *fs_info, unsigned int parent_inode_num, char *filename_to_remove) {
     // carrega o inode pelo numero informado
     inode_struct parent_inode = read_inode_by_number(fs_info, parent_inode_num);
 
@@ -209,16 +212,16 @@ int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* fi
     read_data_block(fs_info, parent_inode.i_block[0], block_buffer, sizeof(block_buffer));
 
     // passa a posiçao que veio do buffer para o pointer
-    char* pointer = block_buffer;
+    char *pointer = block_buffer;
     int bytes_read = 0;
     // cria as variaveis de entry atual e anterior
-    dir_entry* current_entry = NULL;
-    dir_entry* previous_entry = NULL;
+    dir_entry *current_entry = NULL;
+    dir_entry *previous_entry = NULL;
 
     // loop ate que os bytes sejam maiores que o tamanho do bloco
     while (bytes_read < fs_info->block_size) {
         // monta o dir_entry usando o ponteiro
-        current_entry = (dir_entry*)pointer;
+        current_entry = (dir_entry *) pointer;
 
         // se tiver reclen == 0 é pq tem algo errado
         if (current_entry->rec_len == 0) break;
@@ -252,18 +255,20 @@ int remove_dir_entry(ext2_info* fs_info, unsigned int parent_inode_num, char* fi
 }
 
 // acha o numero do inode pelo caminho informado
-unsigned int find_inode_number_by_path(ext2_info* fs_info, char* path) {
+unsigned int find_inode_number_by_path(ext2_info *fs_info, char *path) {
     // variavel para controlar o inode inicial
     unsigned int start_inode;
 
     // se começar com / entao é o 2(inode raiz)
-    if (path[0] == '/') { // Caminho absoluto
+    if (path[0] == '/') {
+        // Caminho absoluto
         start_inode = 2;
-    } else { // se não começa com o inode cadastrado como o atual
+    } else {
+        // se não começa com o inode cadastrado como o atual
         start_inode = fs_info->current_dir_inode;
     }
     // começa a splitar o path
-    char* splited_path = strtok(path, "/");
+    char *splited_path = strtok(path, "/");
 
     // enquanto não for nulo(acabar as /)
     while (splited_path != NULL) {
@@ -271,7 +276,8 @@ unsigned int find_inode_number_by_path(ext2_info* fs_info, char* path) {
         inode_struct inode = read_inode_by_number(fs_info, start_inode);
 
         // verifica se é ou não diretorio (podem tentar trollar, colocar um arquivo no path)
-        if (!is_dir(inode.i_mode)) { // não é um diretorio.
+        if (!is_dir(inode.i_mode)) {
+            // não é um diretorio.
             printf("Erro: '%s' não é um diretório no caminho.\n", "componente_anterior"); // Melhorar isso depois
             return 0;
         }
@@ -281,14 +287,14 @@ unsigned int find_inode_number_by_path(ext2_info* fs_info, char* path) {
         read_data_block(fs_info, inode.i_block[0], tmp, sizeof(tmp));
 
         // faz o loop pelo diretorio
-        char* actual_pointer = tmp;
+        char *actual_pointer = tmp;
         int bytes_read = 0;
         unsigned int next_inode = 0;
 
         // ler ate o bytes passar do tamanho do bloco
         while (bytes_read < fs_info->block_size) {
             // pega o dir_entry atual
-            dir_entry* entry = (dir_entry*)actual_pointer;
+            dir_entry *entry = (dir_entry *) actual_pointer;
 
             // se o tamanho do diretorio é 0 tem algo errado
             if (entry->rec_len == 0) { break; }
@@ -320,25 +326,28 @@ unsigned int find_inode_number_by_path(ext2_info* fs_info, char* path) {
 
 // Separa o path para pegar apenas o final do caminho, ultimo nome passado e dps retorna o numero do "pai"
 // foi usado para funções que precisavam chegar ate um caminho mas o final era o nome do arquivo que ainda n existe
-unsigned int find_parent_inode_and_filename(ext2_info* fs_info, const char* full_path, char* filename_out) {
+unsigned int find_parent_inode_and_filename(ext2_info *fs_info, const char *full_path, char *filename_out) {
     char path_copy[1024];
     strcpy(path_copy, full_path);
 
     // strrchr retorna a  ultima /
-    char* ultimo_slash = strrchr(path_copy, '/');
+    char *ultimo_slash = strrchr(path_copy, '/');
 
     char parent_path[1024];
 
-    if (ultimo_slash == NULL) { // teste.txt
+    if (ultimo_slash == NULL) {
+        // teste.txt
         // se não tiver, é relativo e esta no diretorio
         strcpy(filename_out, path_copy);
         return fs_info->current_dir_inode;
-    } else if (ultimo_slash == path_copy) { // /teste.txt
+    } else if (ultimo_slash == path_copy) {
+        // /teste.txt
         // a unica barra é a primeira, o pai é a raiz
         // inode 2
         strcpy(filename_out, ultimo_slash + 1); // copia o que vem depois da '/'
         strcpy(parent_path, "/");
-    } else { // livros/teste.txt
+    } else {
+        // livros/teste.txt
         strcpy(filename_out, ultimo_slash + 1);
         *ultimo_slash = '\0'; // corta a string na barra, path_copy agora é "livros"
         strcpy(parent_path, path_copy);
@@ -349,7 +358,7 @@ unsigned int find_parent_inode_and_filename(ext2_info* fs_info, const char* full
 }
 
 
-void read_data_block(ext2_info* fs_info, int block_number, char* buffer, int buffer_size) {
+void read_data_block(ext2_info *fs_info, int block_number, char *buffer, int buffer_size) {
     // endereço do conteudo
     int content_location = block_number * fs_info->block_size;
     // aponta para a posição do conteudo e le o tamanho do buffer
@@ -360,7 +369,7 @@ void read_data_block(ext2_info* fs_info, int block_number, char* buffer, int buf
 // função generica para alocação de item, diferenciado pelo tipo, podendo ser i(i-node) e b(bloco)
 // variaveis de controle dos contadores sao armazenadas baseado no tipo passado
 // aloca um novo inode e retorna erro(0) ou o número do novo inode
-unsigned int allocate_item(ext2_info* fs_info, char type) {
+unsigned int allocate_item(ext2_info *fs_info, char type) {
     // loop para cada grupo no sistema de arquivos
     for (int i = 0; i < fs_info->num_block_groups; ++i) {
         // bitmap esta dentro do descritor de grupo
@@ -376,7 +385,8 @@ unsigned int allocate_item(ext2_info* fs_info, char type) {
             free_items_in_group = gd.bg_free_inodes_count;
             bitmap_block_num = gd.bg_inode_bitmap;
             items_per_group = fs_info->sb.s_inodes_per_group;
-        } else { // type == 'b'
+        } else {
+            // type == 'b'
             // configura para bloco
             free_items_in_group = gd.bg_free_blocks_count;
             bitmap_block_num = gd.bg_block_bitmap;
@@ -442,7 +452,7 @@ unsigned int allocate_item(ext2_info* fs_info, char type) {
 
 // função genericap ara desalocação do item, podendo ser inode(i) ou bloco(b)
 // as variaveis de contagem sao atualizadas baseado no tipo passado
-void deallocate_item(ext2_info* fs_info, unsigned int item_number, char type) {
+void deallocate_item(ext2_info *fs_info, unsigned int item_number, char type) {
     // variavel de controle de itens por grupo
     unsigned int items_per_group;
     // pega o tipo e preenche a variavel com o valor especifico
@@ -510,18 +520,18 @@ void deallocate_item(ext2_info* fs_info, unsigned int item_number, char type) {
 
 
 // função auxiliar para verificar se o arquivo existe no sistema de arquivos
-bool verify_file_exists(ext2_info* fs_info, unsigned int i_block, char* filename) {
+bool verify_file_exists(ext2_info *fs_info, unsigned int i_block, char *filename) {
     // le o datablock baseado no i_block passado
     char tmp[1024];
     read_data_block(fs_info, i_block, tmp, sizeof(tmp));
 
 
     // percorrer o data block verificando se o arquivo existe
-    char* actual_pointer = tmp;
+    char *actual_pointer = tmp;
     int bytes_read = 0;
 
     while (bytes_read < BASE_BLOCK) {
-        dir_entry* entry = (dir_entry*)actual_pointer;
+        dir_entry *entry = (dir_entry *) actual_pointer;
 
         if (entry->rec_len == 0) break;
 
@@ -538,29 +548,29 @@ bool verify_file_exists(ext2_info* fs_info, unsigned int i_block, char* filename
 }
 
 
-unsigned int get_block_number_by_index(ext2_info* fs_info, inode_struct* target_inode, unsigned int index) {
+unsigned int get_block_number_by_index(ext2_info *fs_info, inode_struct *target_inode, unsigned int index) {
     if (index < 12) {
         return target_inode->i_block[index];
     }
     if (index < 12 + 256) {
         if (target_inode->i_block[12] == 0) return 0;
         unsigned int indirect_pointers[256];
-        read_data_block(fs_info, target_inode->i_block[12], (char*)indirect_pointers, sizeof(indirect_pointers));
+        read_data_block(fs_info, target_inode->i_block[12], (char *) indirect_pointers, sizeof(indirect_pointers));
         int indirect_block_index = index - 12;
         return indirect_pointers[indirect_block_index];
     }
     if (target_inode->i_block[13] == 0) return 0;
     unsigned int l1_indirect_pointers[256];
-    read_data_block(fs_info, target_inode->i_block[13], (char*)l1_indirect_pointers, sizeof(l1_indirect_pointers));
+    read_data_block(fs_info, target_inode->i_block[13], (char *) l1_indirect_pointers, sizeof(l1_indirect_pointers));
     int adjust_index = index - (12 + 256);
     unsigned int l2_block_index = l1_indirect_pointers[adjust_index / 256];
     if (l2_block_index == 0) return 0;
     unsigned int l2_indirect_pointers[256];
-    read_data_block(fs_info, l2_block_index, (char*)l2_indirect_pointers, sizeof(l2_indirect_pointers));
+    read_data_block(fs_info, l2_block_index, (char *) l2_indirect_pointers, sizeof(l2_indirect_pointers));
     return l2_indirect_pointers[adjust_index % 256];
 }
 
-unsigned int save_buffer_and_register_block(ext2_info* fs_info, inode_struct* target_inode, char* block_buffer,
+unsigned int save_buffer_and_register_block(ext2_info *fs_info, inode_struct *target_inode, char *block_buffer,
                                             unsigned int block_index) {
     unsigned int existent_block_num = get_block_number_by_index(fs_info, target_inode, block_index);
 
@@ -589,14 +599,14 @@ unsigned int save_buffer_and_register_block(ext2_info* fs_info, inode_struct* ta
                 memset(indirect_pointers, 0, sizeof(indirect_pointers)); // limpa o buffer de ponteiros
             } else {
                 // se ja existe, le ele do disco para a memória.
-                read_data_block(fs_info, indirect_block_num, (char*)indirect_pointers, fs_info->block_size);
+                read_data_block(fs_info, indirect_block_num, (char *) indirect_pointers, fs_info->block_size);
             }
 
             int index_no_bloco = block_index - 12;
             indirect_pointers[index_no_bloco] = existent_block_num;
 
             // salva a lista de ponteiros atualizada de volta no disco.
-            point_and_write(fs_info->fd, indirect_block_num * fs_info->block_size, SEEK_SET, (char*)indirect_pointers,
+            point_and_write(fs_info->fd, indirect_block_num * fs_info->block_size, SEEK_SET, (char *) indirect_pointers,
                             fs_info->block_size);
         }
         // Bloco Indireto Duplo
@@ -610,7 +620,7 @@ unsigned int save_buffer_and_register_block(ext2_info* fs_info, inode_struct* ta
                 target_inode->i_block[13] = l1_block_num;
                 memset(l1_pointers, 0, sizeof(l1_pointers));
             } else {
-                read_data_block(fs_info, l1_block_num, (char*)l1_pointers, fs_info->block_size);
+                read_data_block(fs_info, l1_block_num, (char *) l1_pointers, fs_info->block_size);
             }
 
             int adjuted_index = block_index - (12 + 256);
@@ -624,15 +634,15 @@ unsigned int save_buffer_and_register_block(ext2_info* fs_info, inode_struct* ta
                 l2_block_num = allocate_item(fs_info, 'b');
                 if (l2_block_num == 0) return 0;
                 l1_pointers[l1_index] = l2_block_num;
-                point_and_write(fs_info->fd, l1_block_num * fs_info->block_size, SEEK_SET, (char*)l1_pointers,
+                point_and_write(fs_info->fd, l1_block_num * fs_info->block_size, SEEK_SET, (char *) l1_pointers,
                                 fs_info->block_size);
                 memset(l2_pointers, 0, sizeof(l2_pointers));
             } else {
-                read_data_block(fs_info, l2_block_num, (char*)l2_pointers, fs_info->block_size);
+                read_data_block(fs_info, l2_block_num, (char *) l2_pointers, fs_info->block_size);
             }
 
             l2_pointers[l2_index] = existent_block_num;
-            point_and_write(fs_info->fd, l2_block_num * fs_info->block_size, SEEK_SET, (char*)l2_pointers,
+            point_and_write(fs_info->fd, l2_block_num * fs_info->block_size, SEEK_SET, (char *) l2_pointers,
                             fs_info->block_size);
         } else {
             printf("Erro: Arquivo muito grande, escrita em blocos indiretos triplos não suportada.\n");
@@ -644,8 +654,8 @@ unsigned int save_buffer_and_register_block(ext2_info* fs_info, inode_struct* ta
     return 1; // Sucesso
 }
 
-void write_data_block_out(ext2_info* fs_info, unsigned int block_number, char block_buffer[], long total_length,
-                          long* bytes_read, FILE* target_file) {
+void write_data_block_out(ext2_info *fs_info, unsigned int block_number, char block_buffer[], long total_length,
+                          long *bytes_read, FILE *target_file) {
     // le o data block
     read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
     // evitar copiar lixo de memoria
@@ -664,8 +674,8 @@ void write_data_block_out(ext2_info* fs_info, unsigned int block_number, char bl
 }
 
 // função para facilitar a impressão na tela, ja repetida em 3 lugares diferentes
-void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block_buffer, long* total_length,
-                      long* bytes_read) {
+void print_data_block(ext2_info *fs_info, unsigned int block_number, char *block_buffer, long *total_length,
+                      long *bytes_read) {
     read_data_block(fs_info, block_number, block_buffer, fs_info->block_size);
     // evitar printar lixo de memoria
     // calcular quantos bytes ainda faltam para ser lido o arquivo
@@ -682,15 +692,15 @@ void print_data_block(ext2_info* fs_info, unsigned int block_number, char* block
     bytes_read += bytes_to_print;
 }
 
-void parse_and_print_records(char* block_buffer, int bytes_in_buffer, long* total_bytes_to_read, int record_size,
-                             int* limit_counter) {
+void parse_and_print_records(char *block_buffer, int bytes_in_buffer, long *total_bytes_to_read, int record_size,
+                             int *limit_counter) {
     for (int offset = 0; offset < bytes_in_buffer; offset += record_size) {
         if (*total_bytes_to_read <= 0 || *limit_counter <= 0) break;
 
-        UserRecord* current_record = (UserRecord*)(block_buffer + offset);
+        UserRecord *current_record = (UserRecord *) (block_buffer + offset);
 
         if (current_record->id != 0) {
-            printf("ID: %u | Ativo: %c | User: %s | Email: %s\n",
+            printf("id:%u;is_active:%c;username:%s;email:%s\n",
                    current_record->id,
                    current_record->is_active,
                    current_record->username,
@@ -703,15 +713,63 @@ void parse_and_print_records(char* block_buffer, int bytes_in_buffer, long* tota
     }
 }
 
-void append_stream_to_file(ext2_info* fs_info, inode_struct* target_inode, unsigned int stdin_buffer_size) {
+void parse_and_print_records_where(char *block_buffer, int bytes_in_buffer, long *total_bytes_to_read, int record_size,
+                                   int *limit_counter, const FieldMetadata *field_metadata, char *value, char* operator) {
+    for (int offset = 0; offset < bytes_in_buffer; offset += record_size) {
+        if (*total_bytes_to_read <= 0 || *limit_counter <= 0) break;
+
+        UserRecord *current_record = (UserRecord *) (block_buffer + offset);
+
+        char *field_ptr = (char *) current_record + field_metadata->offset;
+
+        bool match = false;
+
+        switch (field_metadata->type) {
+            case FIELD_TYPE_UINT32:
+                if (*(uint32_t *) field_ptr == atoi(value)) {
+                    match = true;
+                }
+                break;
+            case FIELD_TYPE_STRING:
+                if (strcmp(operator, "=") == 0) {
+                    if (strcmp(field_ptr, value) == 0) {
+                        match = true;
+                    }
+                } else if (strcmp(operator, "%") == 0) {
+                    if (strstr(field_ptr, value) != NULL) {
+                        match = true;
+                    }
+                }
+                break;
+            case FIELD_TYPE_CHAR:
+                if (*field_ptr == value[0]) {
+                    match = true;
+                }
+                break;
+        }
+        if (match) {
+            printf("id:%u;is_active:%c;username:%s;email:%s\n",
+                              current_record->id,
+                              current_record->is_active,
+                              current_record->username,
+                              current_record->email);
+            if (*limit_counter > 0) (*limit_counter)--;
+        }
+        (*total_bytes_to_read) -= record_size;
+    }
+}
+
+void append_stream_to_file(ext2_info *fs_info, inode_struct *target_inode, unsigned int stdin_buffer_size) {
     char block_buffer[fs_info->block_size];
     unsigned int buffer_cursor = target_inode->i_size % fs_info->block_size;
 
-    if (buffer_cursor > 0) { // bloco esta parcialmente preenchido
+    if (buffer_cursor > 0) {
+        // bloco esta parcialmente preenchido
         int last_block_idx = (target_inode->i_size - 1) / fs_info->block_size;
         int last_block_num = get_block_number_by_index(fs_info, target_inode, last_block_idx);
         read_data_block(fs_info, last_block_num, block_buffer, fs_info->block_size);
-    } else { // bloco novo
+    } else {
+        // bloco novo
         memset(block_buffer, 0, fs_info->block_size);
     }
 

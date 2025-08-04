@@ -7,7 +7,7 @@ IMAGE_NAME = "myext2image.img"
 CFLAGS = -g -Wall
 
 LIBS = -lreadline
-SRCS = main.c ext2-impl/ext2-fs-methods.c commands/*.c utils/*.c
+SRCS = main.c ext2-impl/ext2-fs-methods.c commands/*.c utils/*.c db-action/*.c entities_struct/*.c
 
 all:
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS) $(LIBS)
