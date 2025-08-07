@@ -700,7 +700,7 @@ void parse_and_print_records(char *block_buffer, int bytes_in_buffer, long *tota
         UserRecord *current_record = (UserRecord *) (block_buffer + offset);
 
         if (current_record->id != 0) {
-            printf("id:%u;is_active:%c;username:%s;email:%s\n",
+            printf("id:%u;is_active:%d;username:%s;email:%s\n",
                    current_record->id,
                    current_record->is_active,
                    current_record->username,

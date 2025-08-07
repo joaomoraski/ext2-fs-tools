@@ -25,13 +25,13 @@ void db_insert(ext2_info *fs_info, char *path) {
 
     inode_struct target_inode = read_inode_by_number(fs_info, inode_num);
 
-    UserRecord record_buffer;
-
-    // le apenas uma registro do stdin
-    if (fread(&record_buffer, sizeof(UserRecord), 1, stdin) != 1) {
+    char raw_byte_buffer[sizeof(UserRecord)];
+    if (fread(raw_byte_buffer, sizeof(UserRecord), 1, stdin) != 1) {
         printf("Erro: Não foi possível ler o registro da stdin.\n");
         return;
     }
+    UserRecord record_buffer;
+    memcpy(&record_buffer, raw_byte_buffer, sizeof(UserRecord));
 
     // acha o final do arquivo
     unsigned int offset_no_ultimo_bloco = target_inode.i_size % fs_info->block_size;

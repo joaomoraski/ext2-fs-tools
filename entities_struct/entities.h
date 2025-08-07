@@ -7,7 +7,7 @@
 
 typedef struct __attribute__((packed)) {
     uint32_t id; // 4 bytes
-    char is_active; // 1 byte
+    uint8_t is_active; // 1 byte
     char username[USERNAME_MAX_LEN]; // 27 bytes
     char email[EMAIL_MAX_LEN]; // 31 bytes
     char padding[1]; // 1 byte
