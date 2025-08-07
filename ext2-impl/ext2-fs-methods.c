@@ -748,7 +748,7 @@ void parse_and_print_records_where(char *block_buffer, int bytes_in_buffer, long
                 break;
         }
         if (match) {
-            printf("id:%u;is_active:%c;username:%s;email:%s\n",
+            printf("id:%u;is_active:%d;username:%s;email:%s\n",
                               current_record->id,
                               current_record->is_active,
                               current_record->username,
